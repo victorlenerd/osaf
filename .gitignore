@@ -1,0 +1,29 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# node
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+# env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+cookies.txt
+# terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/.terraform.lock.hcl
+infra/terraform/*.tfvars
+!infra/terraform/*.auto.tfvars.example
+# local artifacts
+.local/
+tmp/
+.DS_Store

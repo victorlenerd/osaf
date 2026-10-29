@@ -1,0 +1,47 @@
+"""Afefehub backend entrypoint."""
+
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.public import router as public_router
+from app.config import get_settings
+from app.whatsapp.webhook import router as whatsapp_router
+
+settings = get_settings()
+logging.basicConfig(
+    level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
+log = logging.getLogger("afefehub")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.opensearch_endpoint:
+        try:
+            from app.store.opensearch import ensure_index
+
+            ensure_index()
+        except Exception:  # noqa: BLE001
+            log.exception("could not ensure OpenSearch index at startup")
+    yield
+
+
+app = FastAPI(title="Afefehub API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.public_site_url, "http://localhost:3000"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+app.include_router(whatsapp_router)
+app.include_router(public_router)
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True, "env": settings.env}
