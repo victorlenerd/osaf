@@ -224,3 +224,26 @@ def test_summary_merges_model_output_with_computed_counts():
     assert s.last_review_at == "2026-10-03T00:00:00Z"
     assert s.headline == "Great jollof"
     assert chat.calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_city_of_handles_junk_locality_and_suffixes():
+    from app.agent.places import city_of
+
+    def comp(text, *types):
+        return {"longText": text, "shortText": text, "types": list(types)}
+
+    nairobi = {
+        "addressComponents": [
+            comp("Kilimani", "sublocality"),
+            comp("North", "locality"),
+            comp("Nairobi County", "administrative_area_level_1"),
+        ]
+    }
+    accra = {"addressComponents": [comp("Osu Klottey", "sublocality"), comp("Accra", "locality")]}
+    no_locality = {
+        "addressComponents": [comp("Korle Klottey Municipal", "administrative_area_level_2")]
+    }
+    assert city_of(nairobi) == "Nairobi"
+    assert city_of(accra) == "Accra"
+    assert city_of(no_locality) == "Korle Klottey"
+    assert city_of({}) is None

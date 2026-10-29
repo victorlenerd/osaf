@@ -36,8 +36,28 @@ def country_from_phone(phone: str) -> str | None:
 def _component(place: dict, kind: str) -> str | None:
     for c in place.get("addressComponents") or []:
         if kind in (c.get("types") or []):
-            return c.get("shortText") or c.get("longText")
+            return c.get("longText") or c.get("shortText")
     return None
+
+
+# Google sometimes fills `locality` with a compass-point ward name (Nairobi: "North").
+_JUNK_LOCALITIES = {"north", "south", "east", "west", "central", "northern", "southern"}
+_AREA_SUFFIXES = (" County", " Municipal", " Municipality", " District", " Region", " State")
+
+
+def city_of(place: dict) -> str | None:
+    """Best-effort city: locality, else a cleaned admin area, else sublocality."""
+    loc = _component(place, "locality")
+    if loc and loc.strip().lower() not in _JUNK_LOCALITIES:
+        return loc
+    for kind in ("administrative_area_level_1", "administrative_area_level_2"):
+        area = _component(place, kind)
+        if area:
+            for suf in _AREA_SUFFIXES:
+                if area.endswith(suf):
+                    area = area[: -len(suf)]
+            return area
+    return loc or _component(place, "sublocality")
 
 
 def search_places(
@@ -55,6 +75,7 @@ def search_places(
     body: dict = {
         "textQuery": query,
         "regionCode": (region_code or "").upper() or None,
+        "languageCode": "en",
         "maxResultCount": max_results,
     }
     if lat is not None and lng is not None:
@@ -85,9 +106,7 @@ def search_places(
                 lat=loc.get("latitude"),
                 lng=loc.get("longitude"),
                 country=_component(p, "country"),
-                city=_component(p, "locality")
-                or _component(p, "sublocality")
-                or _component(p, "administrative_area_level_2"),
+                city=city_of(p),
                 primary_type=p.get("primaryType"),
             )
         )
