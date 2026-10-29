@@ -37,3 +37,11 @@ def test_dominant_speaker_share():
     )
     assert t.dominant_speaker_share() == 0.8
     assert Transcript(text="x").dominant_speaker_share() == 1.0
+
+
+def test_sam_target_fps_respects_frame_window():
+    from app.pipeline.download import sam_target_fps
+
+    assert 50 <= round(sam_target_fps(15.0) * 15.0) <= 1500  # short reel: boosted above 2 fps
+    assert sam_target_fps(60.0) == 2.0  # 120 frames at the base rate
+    assert round(sam_target_fps(3600.0) * 3600.0) <= 1500  # long video capped

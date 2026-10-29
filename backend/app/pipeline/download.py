@@ -64,6 +64,7 @@ def download_reel(url: str, work: Path) -> DownloadResult:
         "format": "bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/b",
         "merge_output_format": "mp4",
         "quiet": True,
+        "noprogress": True,
         "no_warnings": True,
         "noplaylist": True,
         "retries": 2,
@@ -135,14 +136,24 @@ def probe(video: Path) -> dict:
     }
 
 
-def transcode_for_sam(video: Path, out: Path, max_frames: int = 1500, max_side: int = 720) -> Path:
-    """Re-encode to H.264 MP4 at a reduced frame rate so SAM 3.1 processes ~2 fps of a reel.
+SAM_MIN_FRAMES = 50  # SAM 3.1 rejects (and bills a minimum of) 50 frames per request
 
-    SAM bills per frame (min 50); a 60 s reel at 2 fps is 120 frames, plenty to detect a face.
+
+def sam_target_fps(duration_s: float, max_frames: int = 1500, base_fps: float = 2.0) -> float:
+    """Pick a frame rate that keeps the clip within SAM's 50..max_frames window.
+
+    2 fps is plenty to find a face; short reels get a higher rate to reach 50 frames,
+    long videos a lower one so we never exceed max_frames.
     """
+    duration_s = max(duration_s, 0.5)
+    fps = max(base_fps, (SAM_MIN_FRAMES + 4) / duration_s)
+    return min(fps, max_frames / duration_s)
+
+
+def transcode_for_sam(video: Path, out: Path, max_frames: int = 1500, max_side: int = 720) -> Path:
+    """Re-encode to H.264 MP4 at a reduced frame rate for SAM 3.1 (bills per frame)."""
     info = probe(video)
-    duration = max(info["duration"], 1.0)
-    target_fps = min(2.0, max(max_frames / duration, 50.0 / duration))
+    target_fps = sam_target_fps(info["duration"], max_frames)
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
         "-an", "-r", f"{target_fps:.3f}",
