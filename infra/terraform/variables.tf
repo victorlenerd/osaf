@@ -40,9 +40,9 @@ variable "dns_delegated" {
 }
 
 variable "site_dns_target" {
-  description = "Where apex + www A records point: 'lovable' (current landing page IP) or 'cloudfront' (the S3/CloudFront site built here)."
+  description = "Where apex + www A records point: 'cloudfront' (the S3/CloudFront site built here, live since 2026-10-29) or 'lovable' (the retired landing page IP, kept for rollback)."
   type        = string
-  default     = "lovable"
+  default     = "cloudfront"
 
   validation {
     condition     = contains(["lovable", "cloudfront"], var.site_dns_target)

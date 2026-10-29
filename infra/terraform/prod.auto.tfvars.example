@@ -3,8 +3,8 @@
 # Only for a from-scratch rebuild before the nameserver cutover (default is true).
 # dns_delegated = false
 
-# Move afefehub.com + www from the Lovable landing page to the S3/CloudFront site.
-# site_dns_target = "cloudfront"
+# Roll afefehub.com + www back to the old Lovable landing page (default is the CloudFront site).
+# site_dns_target = "lovable"
 
 # Scale the backend (0 while ECR is empty).
 # desired_count = 1
