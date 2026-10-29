@@ -33,9 +33,10 @@ variable "dns_delegated" {
     Set to true once afefehub.com's nameservers point at the Route53 zone created here
     (see output ns_update_command). Until then ACM certificates cannot validate, so the
     HTTPS listener, CloudFront distribution and the pieces that depend on them are not created.
+    The cutover happened on 2026-10-29, so the default is now true.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "site_dns_target" {
@@ -97,9 +98,9 @@ variable "backend_image" {
 }
 
 variable "desired_count" {
-  description = "Desired number of backend tasks. Keep 0 until an image has been pushed to ECR."
+  description = "Desired number of backend tasks. Set to 0 if no image exists in ECR yet."
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "secret_names" {

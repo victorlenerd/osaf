@@ -36,10 +36,10 @@ terraform init
 terraform apply
 ```
 
-With the default `dns_delegated = false` this creates the zone and its records,
+With `dns_delegated = false` (`terraform apply -var dns_delegated=false`) this creates the zone and its records,
 S3 buckets, DynamoDB, OpenSearch (≈15–20 min), ECR, IAM, SSM placeholders, the
 ALB with an HTTP listener that forwards to the backend, the task definition and
-the service (desired count 0). The two ACM certificates are requested and their
+the service (pass `-var desired_count=0` while ECR is still empty). The two ACM certificates are requested and their
 validation CNAMEs written into the zone, but they stay `PENDING_VALIDATION`
 until the domain actually resolves through Route53.
 
@@ -71,14 +71,13 @@ Propagation takes minutes to a few hours (GoDaddy's TTLs are short). Verify with
 Once `dig NS` shows the Route53 nameservers:
 
 ```bash
-terraform apply -var dns_delegated=true
+terraform apply
 ```
 
 This waits for ACM to validate both certificates, then creates the HTTPS
 listener (port 80 becomes a 301 redirect), the CloudFront distribution and the
-site bucket policy. Make it permanent by putting `dns_delegated = true` in
-`prod.auto.tfvars` (see `prod.auto.tfvars.example`) or by changing the default
-in `variables.tf`.
+site bucket policy. `dns_delegated` defaults to `true` since the cutover on
+2026-10-29; only a rebuild from scratch needs the two-step sequence above.
 
 ## 5. Site cutover (Lovable → CloudFront)
 
@@ -92,7 +91,7 @@ terraform output -raw deploy_site
 Then move the apex/`www` records with one variable:
 
 ```bash
-terraform apply -var dns_delegated=true -var site_dns_target=cloudfront
+terraform apply -var site_dns_target=cloudfront
 ```
 
 `site_dns_target=lovable` rolls back. CloudFront serves `index.html` at `/`,
@@ -132,8 +131,8 @@ docker push 748201447723.dkr.ecr.us-east-1.amazonaws.com/afefehub-backend:latest
 aws ecs update-service --cluster default --service afefehub-backend --force-new-deployment --desired-count 1
 ```
 
-Keep Terraform in agreement by setting `desired_count = 1` in `prod.auto.tfvars`
-(otherwise the next apply scales back to 0). Health check is `GET /healthz`.
+`desired_count` defaults to 1; if you scale with the CLI, keep Terraform in
+agreement via `prod.auto.tfvars` or the next apply resets the count. Health check is `GET /healthz`.
 The WhatsApp webhook URL to register in the Meta app is
 `https://api.afefehub.com/webhooks/whatsapp` (path as implemented in `backend/`).
 
@@ -148,9 +147,9 @@ aws ecs execute-command --cluster default --task <task-id> --container backend -
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `dns_delegated` | `false` | `true` after the NS cutover: creates cert validations, HTTPS listener, CloudFront |
+| `dns_delegated` | `true` | `false` only for a from-scratch rebuild before the NS cutover (skips cert validations, HTTPS listener, CloudFront) |
 | `site_dns_target` | `lovable` | `cloudfront` moves apex/`www` to the S3 site (requires `dns_delegated`) |
-| `desired_count` | `0` | Backend task count |
+| `desired_count` | `1` | Backend task count |
 | `backend_image` | `""` → `<ecr>:latest` | Pin an image tag |
 | `admin_principal_arns` | `user/victorn` | Extra IAM principals allowed on OpenSearch |
 | `lovable_ip`, `zoho_dkim_value`, `zoho_spf_selector` | current GoDaddy values | DNS data |
