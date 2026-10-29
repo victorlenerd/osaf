@@ -35,6 +35,7 @@ app = FastAPI(title="Afefehub API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.public_site_url, "http://localhost:3000"],
+    allow_origin_regex=r"https://[a-z0-9]+\.cloudfront\.net",  # pre-cutover site preview
     allow_methods=["GET"],
     allow_headers=["*"],
 )

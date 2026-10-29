@@ -27,3 +27,4 @@ infra/terraform/*.tfvars
 .local/
 tmp/
 .DS_Store
+!frontend/.env.production
