@@ -1,0 +1,13 @@
+# Copy to prod.auto.tfvars (git-ignored) or pass with -var. Defaults live in variables.tf.
+
+# Flip to true after `aws route53domains update-domain-nameservers ...` (output ns_update_command).
+# dns_delegated = true
+
+# Move afefehub.com + www from the Lovable landing page to the S3/CloudFront site.
+# site_dns_target = "cloudfront"
+
+# Start the backend once an image exists in ECR.
+# desired_count = 1
+
+# Pin a specific image instead of :latest.
+# backend_image = "748201447723.dkr.ecr.us-east-1.amazonaws.com/afefehub-backend:v1"
