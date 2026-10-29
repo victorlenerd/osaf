@@ -1,6 +1,9 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PLACEHOLDER = "CHANGEME"  # Terraform seeds SSM secrets with this; treat it as "not configured"
 
 
 class Settings(BaseSettings):
@@ -40,6 +43,11 @@ class Settings(BaseSettings):
     stale_stage_seconds: int = 600
     phone_hash_salt: str = "afefehub"
     work_dir: str = "/tmp/afefehub"
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _placeholder_is_unset(cls, v):
+        return "" if isinstance(v, str) and v.strip() == PLACEHOLDER else v
 
 
 @lru_cache

@@ -10,8 +10,8 @@ TF_DIR=infra/terraform
 
 out() { terraform -chdir="$TF_DIR" output -raw "$1"; }
 REPO="$(out ecr_repository_url)"
-CLUSTER="$(out ecs_cluster_name 2>/dev/null || echo default)"
-SERVICE="$(out ecs_service_name 2>/dev/null || echo afefehub-backend)"
+SVC="$(out ecs_service)"            # "<cluster>/<service>"
+CLUSTER="${SVC%%/*}"; SERVICE="${SVC##*/}"
 ACCOUNT="${REPO%%.dkr.ecr*}"
 
 echo "==> login to ECR ($REGION)"
@@ -21,7 +21,7 @@ echo "==> build + push $REPO:$TAG"
 docker buildx build --platform linux/amd64 -t "$REPO:$TAG" -t "$REPO:latest" --push backend
 
 echo "==> roll service $SERVICE on $CLUSTER"
-aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment --query 'service.deployments[0].{status:status,rollout:rolloutState}' --output table
+aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment --desired-count "${DESIRED_COUNT:-1}" --query 'service.deployments[0].{status:status,rollout:rolloutState}' --output table
 echo "==> waiting for stable…"
 aws ecs wait services-stable --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE"
 echo "done: https://api.afefehub.com/healthz"

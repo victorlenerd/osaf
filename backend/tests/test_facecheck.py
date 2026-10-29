@@ -45,3 +45,12 @@ def test_sam_target_fps_respects_frame_window():
     assert 50 <= round(sam_target_fps(15.0) * 15.0) <= 1500  # short reel: boosted above 2 fps
     assert sam_target_fps(60.0) == 2.0  # 120 frames at the base rate
     assert round(sam_target_fps(3600.0) * 3600.0) <= 1500  # long video capped
+
+
+def test_changeme_placeholder_reads_as_unset(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.setenv("MODEL_API_KEY", "CHANGEME")
+    monkeypatch.setenv("IG_COOKIES_B64", " CHANGEME ")
+    s = Settings(_env_file=None)
+    assert s.model_api_key == "" and s.ig_cookies_b64 == ""
