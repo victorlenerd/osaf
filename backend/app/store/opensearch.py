@@ -6,7 +6,7 @@ import logging
 from functools import lru_cache
 
 import boto3
-from opensearchpy import OpenSearch, RequestsHttpConnection
+from opensearchpy import OpenSearch, RequestError, RequestsHttpConnection
 from requests_aws4auth import AWS4Auth
 
 from app.config import get_settings
@@ -84,9 +84,15 @@ def client() -> OpenSearch:
 
 def ensure_index() -> None:
     idx = get_settings().opensearch_index
-    if not client().indices.exists(index=idx):
+    if client().indices.exists(index=idx):
+        return
+    try:
         client().indices.create(index=idx, body=INDEX_BODY)
-        log.info("created index %s", idx)
+    except RequestError as e:  # several uvicorn workers race to create it at startup
+        if e.error != "resource_already_exists_exception":
+            raise
+        return
+    log.info("created index %s", idx)
 
 
 def business_doc(b: Business, summary: BusinessSummary | None) -> dict:
