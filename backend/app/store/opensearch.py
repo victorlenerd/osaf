@@ -129,6 +129,12 @@ def upsert_business(b: Business, summary: BusinessSummary | None) -> None:
     )
 
 
+def delete_business(business_id: str) -> None:
+    client().delete(
+        index=get_settings().opensearch_index, id=business_id, ignore=[404], refresh=True
+    )
+
+
 def search(
     q: str,
     *,

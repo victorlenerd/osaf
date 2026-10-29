@@ -1,0 +1,183 @@
+{
+  "_comment": "Fictional businesses and reviews used to exercise the site before real reviews exist. Every business_id starts with 'afefe:demo-' so `seed_demo.py --purge` can remove them all. Reel URLs are placeholders, not real posts.",
+  "businesses": [
+    {
+      "business": {
+        "place_id": "afefe:demo-amala-corner-surulere",
+        "source": "user",
+        "name": "Amala Corner Surulere",
+        "formatted_address": "14 Adelabu Street, Surulere, Lagos, Nigeria",
+        "lat": 6.4969,
+        "lng": 3.3553,
+        "country": "NG",
+        "city": "Lagos",
+        "primary_type": "restaurant"
+      },
+      "summary": {
+        "overall_sentiment": "positive",
+        "headline": "Smoky, well-seasoned amala and ewedu that regulars swear by, let down only by the lunchtime queue.",
+        "recurring_praise": ["Amala is soft and freshly made", "Generous assorted meat portions", "Honest prices"],
+        "recurring_complaints": ["Long queue between 1pm and 2pm", "Few seats, most people eat standing"],
+        "standout_items": ["Amala with ewedu and gbegiri", "Assorted meat (abula)", "Zobo drink"]
+      },
+      "reviews": [
+        {
+          "reel_shortcode": "AFEFEDEMO01",
+          "reviewer_display_name": "Tola",
+          "created_at": "2026-10-20T12:30:00Z",
+          "business_name_as_said": "that amala place on Adelabu",
+          "visit": {"when_text": "last Saturday afternoon", "where_text": "Adelabu Street, Surulere"},
+          "good": ["Amala was soft and hot", "Assorted meat was plenty for the price", "Ewedu was properly drawn"],
+          "improve": ["Queue took almost 20 minutes", "Only four stools inside"],
+          "recommend": "yes",
+          "category": "street_food",
+          "keywords": ["amala", "ewedu", "gbegiri", "assorted meat", "surulere", "cheap lunch"],
+          "overall_sentiment": "positive",
+          "language": "en",
+          "one_line_summary": "Proper Surulere amala worth the queue."
+        },
+        {
+          "reel_shortcode": "AFEFEDEMO02",
+          "reviewer_display_name": "Chidi",
+          "created_at": "2026-10-24T18:05:00Z",
+          "business_name_as_said": "Amala Corner",
+          "visit": {"when_text": "yesterday lunchtime", "where_text": "Surulere, near Adelabu junction"},
+          "good": ["Zobo was cold and not too sweet", "Staff remembered my order from last time"],
+          "improve": ["They had run out of ponmo by 2pm", "No card payment, cash or transfer only"],
+          "recommend": "yes",
+          "category": "street_food",
+          "keywords": ["amala", "zobo", "abula", "surulere", "transfer only"],
+          "overall_sentiment": "positive",
+          "language": "en",
+          "one_line_summary": "Consistent food and friendly staff, go early for ponmo."
+        }
+      ]
+    },
+    {
+      "business": {
+        "place_id": "afefe:demo-nyama-choma-point-westlands",
+        "source": "user",
+        "name": "Nyama Choma Point Westlands",
+        "formatted_address": "Woodvale Grove, Westlands, Nairobi, Kenya",
+        "lat": -1.2676,
+        "lng": 36.8064,
+        "country": "KE",
+        "city": "Nairobi",
+        "primary_type": "restaurant"
+      },
+      "summary": {
+        "overall_sentiment": "mixed",
+        "headline": "Excellent charcoal goat and kachumbari, but slow service when the football is on.",
+        "recurring_praise": ["Goat is tender and smoky", "Kachumbari is fresh and sharp"],
+        "recurring_complaints": ["Food takes over an hour on match nights"],
+        "standout_items": ["Half kilo goat nyama choma", "Ugali", "Kachumbari"]
+      },
+      "reviews": [
+        {
+          "reel_shortcode": "AFEFEDEMO03",
+          "reviewer_display_name": "Wanjiru",
+          "created_at": "2026-10-22T20:15:00Z",
+          "business_name_as_said": "Choma Point in Westlands",
+          "visit": {"when_text": "Friday night", "where_text": "Woodvale Grove, Westlands"},
+          "good": ["Goat was tender with a proper char", "Kachumbari had plenty of chilli and lime"],
+          "improve": ["Waited 70 minutes because of the Arsenal match", "Toilets need attention"],
+          "recommend": "maybe",
+          "category": "restaurant",
+          "keywords": ["nyama choma", "goat", "ugali", "kachumbari", "westlands", "match night"],
+          "overall_sentiment": "mixed",
+          "language": "en",
+          "one_line_summary": "Great choma, terrible timing if there is a match on."
+        }
+      ]
+    },
+    {
+      "business": {
+        "place_id": "afefe:demo-osu-fade-barbers",
+        "source": "user",
+        "name": "Osu Fade Barbers",
+        "formatted_address": "Oxford Street, Osu, Accra, Ghana",
+        "lat": 5.5571,
+        "lng": -0.1824,
+        "country": "GH",
+        "city": "Accra",
+        "primary_type": "barber_shop"
+      },
+      "summary": {
+        "overall_sentiment": "positive",
+        "headline": "Clean skin fades and sharp line-ups from barbers who listen, with a wait on Saturdays.",
+        "recurring_praise": ["Line-up is precise", "Barbers ask before cutting", "Shop is clean and air-conditioned"],
+        "recurring_complaints": ["Saturday wait of 40 minutes or more", "Prices went up recently"],
+        "standout_items": ["Skin fade", "Beard shape-up", "Hot towel finish"]
+      },
+      "reviews": [
+        {
+          "reel_shortcode": "AFEFEDEMO04",
+          "reviewer_display_name": "Kofi",
+          "created_at": "2026-10-18T10:40:00Z",
+          "business_name_as_said": "Osu Fade",
+          "visit": {"when_text": "Saturday morning", "where_text": "Oxford Street, Osu"},
+          "good": ["Fade was clean with no patches", "Barber asked twice before touching my beard", "AC actually works"],
+          "improve": ["Waited 45 minutes without a booking"],
+          "recommend": "yes",
+          "category": "salon_barber",
+          "keywords": ["skin fade", "barber", "beard", "osu", "oxford street", "line up"],
+          "overall_sentiment": "positive",
+          "language": "en",
+          "one_line_summary": "Best fade in Osu, book ahead on Saturdays."
+        },
+        {
+          "reel_shortcode": "AFEFEDEMO05",
+          "reviewer_display_name": "Yaw",
+          "created_at": "2026-10-26T15:20:00Z",
+          "business_name_as_said": "the fade spot on Oxford Street",
+          "visit": {"when_text": "this afternoon", "where_text": "Osu"},
+          "good": ["Hot towel finish was a nice touch", "Line-up was sharp"],
+          "improve": ["Price went from 40 to 60 cedis without notice"],
+          "recommend": "yes",
+          "category": "salon_barber",
+          "keywords": ["barber", "hot towel", "osu", "price increase", "line up"],
+          "overall_sentiment": "positive",
+          "language": "en",
+          "one_line_summary": "Still worth it, just pricier than it was."
+        }
+      ]
+    },
+    {
+      "business": {
+        "place_id": "afefe:demo-kimironko-coffee-lab",
+        "source": "user",
+        "name": "Kimironko Coffee Lab",
+        "formatted_address": "KG 11 Avenue, Kimironko, Kigali, Rwanda",
+        "lat": -1.9405,
+        "lng": 30.1256,
+        "country": "RW",
+        "city": "Kigali",
+        "primary_type": "cafe"
+      },
+      "summary": {
+        "overall_sentiment": "positive",
+        "headline": "Single-origin Rwandan pour-overs, reliable Wi-Fi and a quiet upstairs for working.",
+        "recurring_praise": ["Pour-over is bright and well brewed", "Wi-Fi stays up all day"],
+        "recurring_complaints": ["Pastries sell out by mid-morning"],
+        "standout_items": ["Huye single-origin pour-over", "Iced latte", "Upstairs work tables"]
+      },
+      "reviews": [
+        {
+          "reel_shortcode": "AFEFEDEMO06",
+          "reviewer_display_name": "Aline",
+          "created_at": "2026-10-25T09:10:00Z",
+          "business_name_as_said": "Coffee Lab in Kimironko",
+          "visit": {"when_text": "this morning", "where_text": "KG 11 Avenue, Kimironko"},
+          "good": ["Pour-over from Huye was bright and clean", "Wi-Fi held a two-hour video call", "Quiet upstairs seating"],
+          "improve": ["Croissants were gone by 10am"],
+          "recommend": "yes",
+          "category": "cafe",
+          "keywords": ["coffee", "pour over", "wifi", "work friendly", "kimironko", "huye"],
+          "overall_sentiment": "positive",
+          "language": "en",
+          "one_line_summary": "Kigali's best spot to work over a serious pour-over."
+        }
+      ]
+    }
+  ]
+}

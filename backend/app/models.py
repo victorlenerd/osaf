@@ -21,6 +21,7 @@ class SubmissionState(StrEnum):
     EXTRACTING = "EXTRACTING"
     AWAITING_CLARIFICATION = "AWAITING_CLARIFICATION"
     AWAITING_VIDEO = "AWAITING_VIDEO"  # download failed; user asked to send the file on WhatsApp
+    PAUSED = "PAUSED"  # media saved, but the model API is not configured; resumable
     CONFIRMING = "CONFIRMING"
     PUBLISHED = "PUBLISHED"
     REJECTED = "REJECTED"
@@ -37,6 +38,7 @@ TRANSIENT_STATES = {
 WAITING_STATES = {
     SubmissionState.AWAITING_CLARIFICATION,
     SubmissionState.AWAITING_VIDEO,
+    SubmissionState.PAUSED,
     SubmissionState.CONFIRMING,
 }
 TERMINAL_STATES = {SubmissionState.PUBLISHED, SubmissionState.REJECTED, SubmissionState.ABANDONED}

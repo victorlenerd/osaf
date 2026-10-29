@@ -206,3 +206,62 @@ def test_transient_state_says_wait(world):
     store.convs[phone] = Conversation(phone=phone, active_submission_id="s1")
     runner.process_inbound(phone, _text("hello?"))
     assert "Still working" in sent[-1][1] and not events
+
+
+def test_paused_submission_waits_for_model_key(world):
+    store, sent, events = world
+    phone = "2348012345678"
+    store.subs["s1"] = Submission(
+        submission_id="s1",
+        phone=phone,
+        reel_url="u",
+        reel_shortcode="sc",
+        state=SubmissionState.PAUSED,
+        s3_video_key="submissions/s1/source.mp4",
+    )
+    store.convs[phone] = Conversation(phone=phone, active_submission_id="s1")
+    settings = get_settings()
+    settings.model_api_key = ""
+    runner.process_inbound(phone, _text("any news?"))
+    assert "paused" in sent[-1][1] and not events
+    settings.model_api_key = "k"
+    try:
+        runner.process_inbound(phone, _text("hello again"))
+    finally:
+        settings.model_api_key = ""
+    assert events == ["pipeline:sc"]
+    assert store.subs["s1"].state == SubmissionState.DOWNLOADING
+
+
+def test_business_upsert_uses_every_expression_value(monkeypatch):
+    """DynamoDB rejects UpdateItem when ExpressionAttributeValues has unused keys."""
+    import re
+
+    from app.models import PlaceRef, ReviewExtraction
+    from app.store import dynamo
+
+    calls: list[dict] = []
+
+    class T:
+        def update_item(self, **kw):
+            calls.append(kw)
+
+        def get_item(self, **kw):
+            return {
+                "Item": {"business_id": "x", "name": "n", "formatted_address": "a", "country": "NG"}
+            }
+
+    monkeypatch.setattr(dynamo, "_table", lambda: T())
+    ext = ReviewExtraction(
+        business=PlaceRef(place_id="x", name="n", formatted_address="a", country="NG"),
+        business_name_as_said="n",
+        keywords=["suya", "Suya ", "yaba"],
+        recommend="yes",
+    )
+    dynamo.upsert_business_on_publish(ext)
+    assert len(calls) == 2
+    for kw in calls:
+        used = set(re.findall(r":[a-z_0-9]+", kw["UpdateExpression"]))
+        assert used == set(kw["ExpressionAttributeValues"]), kw["UpdateExpression"]
+        used_names = set(re.findall(r"#[a-z_0-9]+", kw["UpdateExpression"]))
+        assert used_names == set(kw["ExpressionAttributeNames"])

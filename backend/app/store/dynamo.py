@@ -140,7 +140,6 @@ def upsert_business_on_publish(ext: ReviewExtraction) -> Business:
     b = ext.business
     now = now_iso()
     names: dict[str, Any] = {
-        ":one": 1,
         ":now": now,
         ":name": b.name,
         ":addr": b.formatted_address,
@@ -177,6 +176,7 @@ def upsert_business_on_publish(ext: ReviewExtraction) -> Business:
         "names_as_said = list_append(if_not_exists(names_as_said, :empty_list), :said)",
         "keywords = if_not_exists(keywords, :empty_map)",
         "recommend_counts = if_not_exists(recommend_counts, :empty_map)",
+        "review_count = if_not_exists(review_count, :zero)",
     ]
     _table().update_item(
         Key={"PK": f"BIZ#{b.place_id}", "SK": "META"},
@@ -244,3 +244,28 @@ def get_summary(business_id: str) -> BusinessSummary | None:
 
 def put_summary(business_id: str, s: BusinessSummary) -> None:
     _table().put_item(Item={"PK": f"BIZ#{business_id}", "SK": "SUMMARY", **_to_item(s)})
+
+
+# ------------------------------------------------------------------- maintenance
+def delete_business(business_id: str) -> int:
+    """Remove a business and everything under its partition (reviews, summary). Returns count."""
+    pk = f"BIZ#{business_id}"
+    n = 0
+    start = None
+    with _table().batch_writer() as batch:
+        while True:
+            kwargs: dict[str, Any] = {
+                "KeyConditionExpression": "PK = :p",
+                "ExpressionAttributeValues": {":p": pk},
+                "ProjectionExpression": "PK, SK",
+            }
+            if start:
+                kwargs["ExclusiveStartKey"] = start
+            r = _table().query(**kwargs)
+            for item in r.get("Items", []):
+                batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+                n += 1
+            start = r.get("LastEvaluatedKey")
+            if not start:
+                break
+    return n

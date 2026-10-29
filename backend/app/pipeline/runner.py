@@ -52,6 +52,15 @@ HELP = (
 CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
 )
+PAUSED_MSG = (
+    "Saved your reel ✅ Our review engine is paused for maintenance right now, so I'll "
+    "finish this one as soon as it's back. No need to resend; message me later to check."
+)
+
+
+def _models_ready() -> bool:
+    """The Meta Model API key is required from transcription onward."""
+    return bool(get_settings().model_api_key)
 
 
 def _work(sid: str) -> Path:
@@ -172,6 +181,14 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         if active.state == SubmissionState.AWAITING_VIDEO:
             wa.send_text(phone, "Please send the video file itself (or a public reel link).")
             return
+        if active.state == SubmissionState.PAUSED:
+            if _models_ready():
+                wa.send_text(phone, "We're back! Picking up your reel where I left off… 🎬")
+                _set_state(active, SubmissionState.DOWNLOADING, "resumed after pause")
+                _run_pipeline(active, conv, skip_download=True)
+            else:
+                wa.send_text(phone, PAUSED_MSG)
+            return
         if active.state in TRANSIENT_STATES:
             if _is_stale(active):
                 wa.send_text(phone, "That one got stuck, resuming now…")
@@ -210,6 +227,11 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
                 extract_audio(video, audio)
         sub.s3_video_key = s3.upload_file(video, s3.Keys.video(sid), "video/mp4")
         sub.s3_audio_key = s3.upload_file(audio, s3.Keys.audio(sid), "audio/wav")
+
+        if not _models_ready():
+            _set_state(sub, SubmissionState.PAUSED, "model API key not configured")
+            wa.send_text(sub.phone, PAUSED_MSG)
+            return
 
         _set_state(sub, SubmissionState.TRANSCRIBING)
         wa.send_text(sub.phone, "Listening to the review… 🎧")
@@ -250,6 +272,10 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
 
 
 def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: str | None) -> None:
+    if not _models_ready():
+        _set_state(sub, SubmissionState.PAUSED, "model API key not configured")
+        wa.send_text(sub.phone, PAUSED_MSG)
+        return
     outcome: ExtractionOutcome = run_extraction_turn(sub, conv, latest_answer)
     for line in outcome.trace:
         s3.append_jsonl(
