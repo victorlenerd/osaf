@@ -95,8 +95,9 @@ const sections: LegalSection[] = [
     body: (
       <>
         <p>
-          We rely on the legal bases set out in the Nigeria Data Protection Act 2023 and, where they apply to you, the EU and UK General
-          Data Protection Regulation and other data-protection laws in the countries we serve.
+          {LEGAL.operator} is based in Canada. We rely on consent and the other grounds recognised by Canada&rsquo;s Personal Information
+          Protection and Electronic Documents Act (PIPEDA) and, where they apply to you, the Nigeria Data Protection Act 2023, the EU and UK
+          General Data Protection Regulation and other data-protection laws in the countries we serve.
         </p>
         <ul>
           <li>
@@ -223,8 +224,9 @@ const sections: LegalSection[] = [
       <>
         <p>
           Our infrastructure runs on Amazon Web Services in the United States (us-east-1 region). Meta and Google process data in the United
-          States and other countries where they operate. This means personal data collected in Nigeria and other African countries, and from
-          visitors elsewhere, is transferred internationally.
+          States and other countries where they operate, and we operate the Service from Canada. This means personal data collected in
+          Nigeria and other African countries, and from visitors elsewhere, is transferred internationally, including to Canada and the
+          United States.
         </p>
         <p>
           Where the destination country has not been recognised as providing adequate protection, we rely on contractual safeguards,
@@ -298,8 +300,9 @@ const sections: LegalSection[] = [
         </p>
         <p>
           <strong>Complaints.</strong> If you are unhappy with how we handle your data, please contact us first. You also have the right to
-          complain to a supervisory authority: in Nigeria, the Nigeria Data Protection Commission (NDPC); in the EU or UK, your national
-          data-protection authority; elsewhere, the authority responsible for data protection in your country.
+          complain to a supervisory authority: in Canada, the Office of the Privacy Commissioner of Canada; in Nigeria, the Nigeria Data
+          Protection Commission (NDPC); in the EU or UK, your national data-protection authority; elsewhere, the authority responsible for
+          data protection in your country.
         </p>
       </>
     ),
@@ -349,7 +352,8 @@ const sections: LegalSection[] = [
         and at rest, access controls limited to staff who need access, private storage for downloaded media, secret management for API
         credentials, logging of administrative access, and verification of WhatsApp webhook signatures. No system is perfectly secure. If we
         become aware of a breach that is likely to affect your rights, we will notify you and the relevant authority as required by law,
-        which in Nigeria means notifying the NDPC within 72 hours.
+        which in Canada means reporting to the Privacy Commissioner of Canada and notifying affected individuals as soon as feasible, and in
+        Nigeria means notifying the NDPC within 72 hours.
       </p>
     ),
   },

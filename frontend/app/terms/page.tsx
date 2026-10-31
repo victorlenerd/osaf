@@ -481,7 +481,7 @@ export default function TermsPage() {
         "You keep your rights; you give us a licence to process, store a copy of, and display your reel and the review we extract from it.",
         "You can withdraw a review at any time via WhatsApp or email. We never charge businesses to remove or improve reviews.",
         "Businesses and anyone else can send a takedown notice; we act on well-founded notices within 14 days.",
-        `The Service is provided as is, our liability is capped, and ${LEGAL.governingLaw.replace(/^the /, "")} law applies.`,
+        `The Service is provided as is, our liability is capped, and ${LEGAL.governingLawAdjective} law applies.`,
       ]}
       sections={sections}
     />

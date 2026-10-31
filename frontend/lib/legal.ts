@@ -5,13 +5,15 @@
 export const LEGAL = {
   /** Trading name used throughout both documents. */
   brand: "Afefehub",
-  /** Registered legal entity that operates the service. Replace with the company name once incorporated. */
-  operator: "Afefehub",
-  /** Postal address for legal notices. Set before launch. */
-  address: "Lagos, Nigeria",
-  /** Country whose law governs the Terms and whose courts hear disputes. */
-  governingLaw: "the Federal Republic of Nigeria",
-  courts: "the courts of Lagos State, Nigeria",
+  /** Registered legal entity that operates the service: 1CTECH, a Canadian company (https://1ctech.ca). */
+  operator: "1CTECH",
+  operatorUrl: "https://1ctech.ca",
+  /** Postal address for legal notices. Add the street address before launch; the country must stay Canada. */
+  address: "Ontario, Canada",
+  /** 1CTECH is registered in Ontario: Ontario law governs the Terms and Ontario courts hear disputes. */
+  governingLaw: "the Province of Ontario and the federal laws of Canada applicable therein",
+  governingLawAdjective: "Ontario",
+  courts: "the courts of Ontario, Canada",
   /** Contact mailboxes. Make sure these are delivered before publishing. */
   legalEmail: "legal@afefehub.com",
   privacyEmail: "privacy@afefehub.com",
