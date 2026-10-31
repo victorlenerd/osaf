@@ -74,9 +74,9 @@ variable "zoho_spf_selector" {
 }
 
 variable "admin_principal_arns" {
-  description = "IAM principals (besides the ECS task role) allowed es:ESHttp* on the OpenSearch domain."
+  description = "IAM principals (besides the ECS task role) allowed es:ESHttp* on the OpenSearch domain. Set your own operator ARNs in prod.auto.tfvars."
   type        = list(string)
-  default     = ["arn:aws:iam::748201447723:user/victorn"]
+  default     = []
 }
 
 variable "opensearch_engine_version" {

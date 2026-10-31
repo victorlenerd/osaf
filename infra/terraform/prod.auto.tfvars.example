@@ -1,5 +1,9 @@
 # Copy to prod.auto.tfvars (git-ignored) or pass with -var. Defaults live in variables.tf.
 
+# IAM principals (besides the ECS task role) allowed to call the OpenSearch domain directly,
+# for example the operator who runs backend/scripts/create_index.py.
+# admin_principal_arns = ["arn:aws:iam::<ACCOUNT_ID>:user/<you>"]
+
 # Only for a from-scratch rebuild before the nameserver cutover (default is true).
 # dns_delegated = false
 

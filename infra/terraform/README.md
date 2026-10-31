@@ -1,5 +1,9 @@
 # Afefehub infrastructure (Terraform)
 
+This describes Afefehub's own production deployment. To run your own copy, change the account
+check in `bootstrap.sh`, the state bucket in `providers.tf`, the domain in `variables.tf` and
+the bucket names, then follow the same steps.
+
 Everything Afefehub runs on in AWS account `748201447723`, region `us-east-1`:
 
 | Piece | Resource |
@@ -151,7 +155,7 @@ aws ecs execute-command --cluster default --task <task-id> --container backend -
 | `site_dns_target` | `lovable` | `cloudfront` moves apex/`www` to the S3 site (requires `dns_delegated`) |
 | `desired_count` | `1` | Backend task count |
 | `backend_image` | `""` → `<ecr>:latest` | Pin an image tag |
-| `admin_principal_arns` | `user/victorn` | Extra IAM principals allowed on OpenSearch |
+| `admin_principal_arns` | `[]` | Extra IAM principals allowed on OpenSearch (set your operator ARN in `prod.auto.tfvars`) |
 | `lovable_ip`, `zoho_dkim_value`, `zoho_spf_selector` | current GoDaddy values | DNS data |
 
 ## Notes

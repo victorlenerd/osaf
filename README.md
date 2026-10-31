@@ -1,10 +1,14 @@
 # Afefehub
 
+[![ci](https://github.com/victorlenerd/osaf/actions/workflows/ci.yml/badge.svg)](https://github.com/victorlenerd/osaf/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
 **Real reviews from real voices.** Afefehub turns public Instagram video reviews and WhatsApp
 voice-note reviews into a searchable, continuously updated history of businesses across Africa —
 powered by Meta's model stack.
 
-Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai) (October 2026).
+Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai) (October 2026) and
+open source under the MIT license. Live at [afefehub.com](https://afefehub.com).
 
 ## How it works
 
@@ -36,6 +40,7 @@ voice note → WhatsApp → webhook → fetch → transcribe ──────�
 | `backend/` | FastAPI service: WhatsApp webhook, pipeline, Muse Spark agent, public API |
 | `frontend/` | Next.js static site (search + business pages) |
 | `infra/terraform/` | AWS: Route53, S3 + CloudFront, ECS Fargate + ALB, DynamoDB, OpenSearch |
+| `brand/` | Logo sources and exported icons |
 | `docs/` | Architecture notes |
 
 ## Running the backend locally
@@ -58,10 +63,27 @@ python scripts/run_pipeline_local.py https://www.instagram.com/reel/XXXXXXXX/ --
 Expose the webhook for WhatsApp during development with a tunnel (for example `cloudflared tunnel --url http://localhost:8000`)
 and register `https://<tunnel>/webhooks/whatsapp` with your `WHATSAPP_VERIFY_TOKEN` in the Meta app.
 
+## Running the frontend locally
+
+```bash
+cd frontend
+pnpm install
+pnpm mock   # fixture API on :8000, no keys needed
+pnpm dev    # site on :3000
+```
+
+See [`frontend/README.md`](frontend/README.md) for the mock API, build and deployment.
+
 ## Configuration
 
 All settings are environment variables; see [`.env.example`](.env.example). Secrets are never committed.
 In AWS they live in SSM Parameter Store under `/afefehub/prod/` and are injected into the ECS task.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); security
+reports go through [SECURITY.md](SECURITY.md), not public issues. Everyone taking part is expected
+to follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -1,0 +1,34 @@
+name: Bug report
+description: Something is broken in the backend, the site or the pipeline
+labels: [bug]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - backend (API, WhatsApp webhook, pipeline, agent)
+        - frontend (afefehub.com)
+        - infra (Terraform, deployment)
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what you saw. Paste logs or screenshots if you have them. Remove phone numbers and other personal data.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+  - type: input
+    id: version
+    attributes:
+      label: Commit or deployed version
+      placeholder: e.g. 7d0442a, or "afefehub.com on 2026-10-31"
