@@ -2,70 +2,57 @@
 
 @custom-variant dark (&:where(.dark, .dark *), @media (prefers-color-scheme: dark));
 
-/* Palette inspired by West African textiles: indigo adire, terracotta, warm sand, kola gold. */
+/* Palette: navy blue and white. Status colours (good / mixed / bad) stay semantic. */
 @theme {
-  --color-indigo-950: #141a3d;
-  --color-indigo-900: #1f2a63;
-  --color-indigo-800: #2b3a85;
-  --color-indigo-700: #3a4ca3;
-  --color-indigo-600: #4d5fbf;
-  --color-indigo-300: #a9b3e6;
-  --color-indigo-100: #e3e6f7;
+  --color-navy-950: #050d24;
+  --color-navy-900: #0b1f4b;
+  --color-navy-800: #112b66;
+  --color-navy-700: #173a85;
+  --color-navy-600: #1f4aa6;
+  --color-navy-500: #2f5fc4;
+  --color-navy-400: #5b84d6;
+  --color-navy-300: #8face5;
+  --color-navy-200: #c3d2f0;
+  --color-navy-100: #e3eafa;
+  --color-navy-50: #f3f6fc;
 
-  --color-terra-700: #9a3b1c;
-  --color-terra-600: #b8482a;
-  --color-terra-500: #d2603b;
-  --color-terra-400: #e37e58;
-  --color-terra-100: #f8e3d8;
-
-  --color-sand-50: #fdf9f2;
-  --color-sand-100: #f8efdf;
-  --color-sand-200: #efe1c5;
-  --color-sand-300: #e2cda2;
-  --color-sand-700: #8a6d3b;
-
-  --color-kola-500: #d9a03a;
-  --color-kola-300: #f0cc7c;
-
-  --color-ink: #1c1915;
-  --color-ink-soft: #5a524a;
-  --color-night: #14121a;
-  --color-night-2: #1e1b26;
-  --color-night-3: #2a2634;
-  --color-cream: #f6eee0;
+  --color-white: #ffffff;
 
   --color-good: #2f8f5b;
   --color-mixed: #d9a03a;
+  --color-mixed-ink: #8a5f0f;
   --color-bad: #c43d3d;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: var(--font-fraunces), "Georgia", ui-serif, serif;
+  --font-sans: var(--font-lato), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-lato), ui-sans-serif, system-ui, sans-serif;
 
   --radius-xl2: 1.25rem;
 }
 
 :root {
-  --bg: var(--color-sand-50);
-  --bg-elev: #ffffff;
-  --fg: var(--color-ink);
-  --fg-soft: var(--color-ink-soft);
-  --line: var(--color-sand-200);
-  --accent: var(--color-terra-600);
-  --accent-fg: #ffffff;
-  --brand: var(--color-indigo-900);
+  --bg: var(--color-white);
+  --bg-elev: var(--color-white);
+  --fg: var(--color-navy-950);
+  --fg-soft: #4a5a80;
+  --line: var(--color-navy-200);
+  --accent: var(--color-navy-700);
+  --accent-fg: var(--color-white);
+  --brand: var(--color-navy-900);
+  --mixed-fg: var(--color-mixed-ink);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: var(--color-night);
-    --bg-elev: var(--color-night-2);
-    --fg: var(--color-cream);
-    --fg-soft: #b9b0a3;
-    --line: #3a3544;
-    --accent: var(--color-terra-500);
-    --accent-fg: #1c1915;
-    --brand: var(--color-indigo-300);
+    --bg: var(--color-navy-950);
+    --bg-elev: var(--color-navy-900);
+    --fg: var(--color-white);
+    --fg-soft: #b4c1e0;
+    --line: #22386b;
+    --accent: var(--color-white);
+    --accent-fg: var(--color-navy-900);
+    --brand: var(--color-white);
+    --mixed-fg: var(--color-mixed);
     color-scheme: dark;
   }
 }
@@ -81,20 +68,20 @@ html {
 body {
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 500px at 85% -10%, color-mix(in oklab, var(--color-terra-400) 18%, transparent), transparent 60%),
-    radial-gradient(900px 400px at -10% 10%, color-mix(in oklab, var(--color-indigo-600) 14%, transparent), transparent 60%),
+    radial-gradient(1200px 500px at 85% -10%, color-mix(in oklab, var(--color-navy-500) 14%, transparent), transparent 60%),
+    radial-gradient(900px 400px at -10% 10%, color-mix(in oklab, var(--color-navy-400) 10%, transparent), transparent 60%),
     var(--bg);
 }
 
-/* Woven "kente" stripe used as a decorative rule */
+/* Woven stripe used as a decorative rule, now in navy and white */
 .weave {
   height: 6px;
   background: repeating-linear-gradient(
     90deg,
-    var(--color-indigo-800) 0 24px,
-    var(--color-kola-500) 24px 36px,
-    var(--color-terra-600) 36px 60px,
-    var(--color-sand-300) 60px 72px
+    var(--color-navy-900) 0 24px,
+    var(--color-navy-500) 24px 36px,
+    var(--color-navy-700) 36px 60px,
+    var(--color-navy-200) 60px 72px
   );
 }
 
@@ -102,7 +89,7 @@ body {
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: var(--radius-xl2);
-  box-shadow: 0 1px 2px rgb(20 18 26 / 0.04), 0 8px 24px -12px rgb(20 18 26 / 0.12);
+  box-shadow: 0 1px 2px rgb(5 13 36 / 0.05), 0 8px 24px -12px rgb(5 13 36 / 0.14);
 }
 
 .chip {

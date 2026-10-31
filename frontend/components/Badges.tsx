@@ -41,7 +41,7 @@ export function CategoryBadge({ category }: { category: string }) {
 
 const RECOMMEND_STYLE: Record<Recommend, { bg: string; fg: string; label: string }> = {
   yes: { bg: "color-mix(in oklab, var(--color-good) 16%, transparent)", fg: "var(--color-good)", label: "Recommends" },
-  maybe: { bg: "color-mix(in oklab, var(--color-mixed) 22%, transparent)", fg: "#8a5f0f", label: "Maybe" },
+  maybe: { bg: "color-mix(in oklab, var(--color-mixed) 22%, transparent)", fg: "var(--mixed-fg)", label: "Maybe" },
   no: { bg: "color-mix(in oklab, var(--color-bad) 14%, transparent)", fg: "var(--color-bad)", label: "Doesn't recommend" },
 };
 

@@ -4,7 +4,7 @@ import { SentimentDot } from "./Badges";
 
 function List({ title, items, tone }: { title: string; items: string[]; tone: "good" | "bad" | "star" }) {
   if (!items?.length) return null;
-  const color = tone === "good" ? "var(--color-good)" : tone === "bad" ? "var(--color-bad)" : "var(--color-kola-500)";
+  const color = tone === "good" ? "var(--color-good)" : tone === "bad" ? "var(--color-bad)" : "var(--color-mixed)";
   const mark = tone === "good" ? "+" : tone === "bad" ? "–" : "★";
   return (
     <div>
@@ -64,7 +64,7 @@ export default function SummaryCard({ summary }: { summary: Summary | null }) {
             aria-valuenow={rate}
             aria-label="Recommendation rate"
           >
-            <div className="h-full rounded-full" style={{ width: `${rate}%`, background: "linear-gradient(90deg, var(--color-terra-600), var(--color-kola-500))" }} />
+            <div className="h-full rounded-full" style={{ width: `${rate}%`, background: "linear-gradient(90deg, var(--color-navy-800), var(--color-navy-400))" }} />
           </div>
         </div>
 

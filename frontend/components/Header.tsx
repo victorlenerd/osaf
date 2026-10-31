@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Logo from "@/components/Logo";
 
 const NAV = [
   { href: "/", label: "Search" },
@@ -15,14 +16,7 @@ export default function Header() {
       <div className="weave" aria-hidden />
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2" aria-label="Afefehub home">
-          <span
-            aria-hidden
-            className="inline-block h-6 w-6 rounded-md"
-            style={{
-              background:
-                "conic-gradient(from 45deg, var(--color-indigo-800), var(--color-terra-600), var(--color-kola-500), var(--color-indigo-800))",
-            }}
-          />
+          <Logo size={26} />
           <span className="font-display text-xl font-semibold tracking-tight" style={{ color: "var(--brand)" }}>
             Afefehub
           </span>
