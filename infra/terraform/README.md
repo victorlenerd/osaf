@@ -14,7 +14,8 @@ Everything Afefehub runs on in AWS account `748201447723`, region `us-east-1`:
 | Media | S3 `afefehub-media-prod`, private, `submissions/` expires after 30 days |
 | Search | OpenSearch domain `afefehub-prod`, 1 × t3.small.search, 10 GB gp3, IAM access policy |
 | Data | DynamoDB `afefehub` (PK/SK, GSI1, TTL `expires_at`) |
-| Backend | ECR `afefehub-backend`, Fargate task 0.5 vCPU / 1 GB in cluster `default`, ALB `api.afefehub.com`, logs `/afefehub/backend` |
+| Backend | ECR `afefehub-backend`, Fargate task 0.5 vCPU / 1 GB in cluster `default` (non-root, read-only root FS), ALB `api.afefehub.com`, logs `/afefehub/backend` |
+| Edge protection | AWS WAF on the ALB: rate limits per IP on `/api/places/*` and `/api/*`, AWS Common Rule Set, IP reputation list (`waf.tf`) |
 | Secrets | SSM SecureString `/afefehub/prod/*` (placeholders; real values set with the CLI) |
 
 State lives in S3 bucket `afefehub-tfstate-748201447723` (key `afefehub/prod.tfstate`, S3 lockfile).
@@ -105,10 +106,12 @@ rewrites `/foo` → `/foo.html` and `/foo/` → `/foo/index.html`, and returns
 ## 6. Secrets
 
 Terraform creates each parameter with the value `CHANGEME` and never touches
-the value again. Set the real ones:
+the value again. Set the real ones (or run `scripts/set_secrets.sh`, which prompts for each
+value or reads them with `--from-env FILE`; `PHONE_HASH_SALT` must be set before a prod task
+will start):
 
 ```bash
-for name in MODEL_API_KEY GOOGLE_PLACES_API_KEY WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN META_APP_SECRET; do
+for name in MODEL_API_KEY GOOGLE_PLACES_API_KEY WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN META_APP_SECRET PHONE_HASH_SALT; do
   aws ssm put-parameter --name /afefehub/prod/$name --type SecureString --overwrite --value "$(read -rs "?$name: " v; echo "$v")"
 done
 # optional, only if Instagram rate-limits anonymous yt-dlp downloads:
@@ -120,6 +123,10 @@ The task reads them at start, so roll the service after changing one
 as `CHANGEME` when unused; the backend treats that as unset.
 
 ## 7. Deploying the backend
+
+The usual way is `scripts/deploy_backend.sh` from the repository root: it builds for
+`linux/amd64`, tags the image with the git short SHA and `latest`, pushes, forces a new
+deployment and waits for `services-stable`. The equivalent manual steps are printed by
 
 ```bash
 terraform output -raw deploy_backend
@@ -152,7 +159,7 @@ aws ecs execute-command --cluster default --task <task-id> --container backend -
 | Variable | Default | Purpose |
 |---|---|---|
 | `dns_delegated` | `true` | `false` only for a from-scratch rebuild before the NS cutover (skips cert validations, HTTPS listener, CloudFront) |
-| `site_dns_target` | `lovable` | `cloudfront` moves apex/`www` to the S3 site (requires `dns_delegated`) |
+| `site_dns_target` | `cloudfront` | `lovable` rolls apex/`www` back to the old host; `cloudfront` (live since 2026-10-29) serves the S3 site (requires `dns_delegated`) |
 | `desired_count` | `1` | Backend task count |
 | `backend_image` | `""` → `<ecr>:latest` | Pin an image tag |
 | `admin_principal_arns` | `[]` | Extra IAM principals allowed on OpenSearch (set your operator ARN in `prod.auto.tfvars`) |

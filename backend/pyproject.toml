@@ -1,7 +1,7 @@
 [project]
 name = "afefehub-backend"
 version = "0.1.0"
-description = "Afefehub: Meta-model-powered agent that turns Instagram video reviews into a searchable business history"
+description = "Afefehub: Meta-model-powered agent that turns Instagram reel and WhatsApp voice-note reviews into a searchable business history"
 readme = { text = "Afefehub backend. See the README at the repository root: https://github.com/victorlenerd/osaf", content-type = "text/markdown" }
 requires-python = ">=3.12"
 license = { text = "MIT" }

@@ -51,7 +51,7 @@ pnpm build
 ```
 
 `pnpm build` writes a static export to `out/` containing `index.html`, `business.html`,
-`about.html` and `404.html` plus `_next/` assets. The business page reads `?id=` on the client,
+`about.html`, `terms.html`, `privacy.html` and `404.html` plus `_next/` assets. The business page reads `?id=` on the client,
 so one `business.html` serves every business. The CloudFront function on the site distribution
 maps extensionless paths (`/about`, `/business`) to the matching `.html` file.
 

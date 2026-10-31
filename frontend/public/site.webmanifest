@@ -1,7 +1,7 @@
 {
   "name": "Afefehub",
   "short_name": "Afefehub",
-  "description": "Real reviews from real faces. Find businesses across Africa reviewed on video.",
+  "description": "Real reviews from real voices. Find businesses across Africa reviewed on video and by voice note.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffc72c",
