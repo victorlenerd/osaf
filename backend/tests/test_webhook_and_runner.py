@@ -265,3 +265,26 @@ def test_business_upsert_uses_every_expression_value(monkeypatch):
         assert used == set(kw["ExpressionAttributeValues"]), kw["UpdateExpression"]
         used_names = set(re.findall(r"#[a-z_0-9]+", kw["UpdateExpression"]))
         assert used_names == set(kw["ExpressionAttributeNames"])
+
+
+def test_access_log_redacts_verify_token():
+    import logging
+
+    from app.main import RedactVerifyToken
+
+    rec = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        "",
+        0,
+        '%s - "%s %s HTTP/1.1" %d',
+        (
+            "1.2.3.4:1",
+            "GET",
+            "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=s3cret&hub.challenge=1",
+            200,
+        ),
+        None,
+    )
+    assert RedactVerifyToken().filter(rec)
+    assert "s3cret" not in rec.getMessage() and "hub.verify_token=***" in rec.getMessage()

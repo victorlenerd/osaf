@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,6 +18,23 @@ logging.basicConfig(
     level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
 )
 log = logging.getLogger("afefehub")
+
+_VERIFY_TOKEN_RE = re.compile(r"(hub\.verify_token=)[^&\s\"]+")
+
+
+class RedactVerifyToken(logging.Filter):
+    """Keep the webhook verify token out of the uvicorn access log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args and isinstance(record.args, tuple):
+            record.args = tuple(
+                _VERIFY_TOKEN_RE.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args
+            )
+        record.msg = _VERIFY_TOKEN_RE.sub(r"\1***", str(record.msg))
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(RedactVerifyToken())
 
 
 @asynccontextmanager
