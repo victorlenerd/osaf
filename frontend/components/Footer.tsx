@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { REPO_URL } from "@/lib/constants";
+import GitHubStars from "@/components/GitHubStars";
 
 export default function Footer() {
   return (
@@ -11,13 +12,11 @@ export default function Footer() {
             1CTECH
           </a>
         </p>
-        <nav aria-label="Footer" className="flex flex-wrap gap-x-4 gap-y-1">
+        <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Link href="/about" className="hover:underline">About</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
-          <a href={REPO_URL || "#"} className="hover:underline" target={REPO_URL ? "_blank" : undefined} rel="noreferrer">
-            Open source
-          </a>
+          {REPO_URL && <GitHubStars url={REPO_URL} />}
         </nav>
       </div>
     </footer>
