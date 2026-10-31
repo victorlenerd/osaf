@@ -5,6 +5,7 @@ import SearchBox, { type SearchState } from "@/components/SearchBox";
 import ResultCard from "@/components/ResultCard";
 import PlaceCandidateCard from "@/components/PlaceCandidateCard";
 import HowToSubmit from "@/components/HowToSubmit";
+import RewardsCard from "@/components/RewardsCard";
 import { SkeletonCard } from "@/components/Skeleton";
 import { ApiError, lookupPlaces, searchBusinesses } from "@/lib/api";
 import type { PlaceCandidate, SearchResult } from "@/lib/types";
@@ -195,6 +196,10 @@ export default function HomePage() {
 
       <div className={`max-w-3xl ${(status === "done" && results.length > 0) || showingCandidates ? "mt-12" : "mt-8"}`}>
         <HowToSubmit compact={(status === "done" && results.length > 0) || showingCandidates} />
+      </div>
+
+      <div className="mt-6 max-w-3xl">
+        <RewardsCard />
       </div>
     </div>
   );

@@ -115,10 +115,14 @@ const sections: LegalSection[] = [
           businesses you meant) before publishing.
         </p>
         <p>
-          <strong>Points.</strong> Each published review earns a fixed number of Afefehub points as a thank-you. Points are awarded in
-          the same amount for every published review whether it is positive, mixed or negative, so they never reward a particular
-          opinion. Points have no cash value, cannot be redeemed, transferred or sold, are not payment for a review, and we may change
-          or withdraw the points programme at any time.
+          <strong>Points and the gift card.</strong> Each published review earns 10 Afefehub points as a thank-you. Points are awarded
+          in the same amount for every published review whether it is positive, mixed or negative, so they never reward a particular
+          opinion. When your balance reaches 100 points we will send you a US$10 Amazon gift card to the WhatsApp number you review
+          from, and 100 points are deducted from your balance. The gift card is a thank-you for taking part, not payment for any
+          review or for any opinion in it. Points have no cash value, cannot be exchanged for anything other than the gift card,
+          cannot be transferred or sold, and we may withhold them, or the gift card, where a review breaks these Terms. We may change
+          or withdraw the points programme at any time; points already earned keep counting towards a gift card for 30 days after we
+          announce a change. Amazon is not a sponsor of this programme.
         </p>
       </>
     ),

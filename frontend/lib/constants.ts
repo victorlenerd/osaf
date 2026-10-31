@@ -77,3 +77,9 @@ export function languageName(code: string): string {
 /** Shown on the site and used for the wa.me link. Override with NEXT_PUBLIC_WHATSAPP_NUMBER. */
 export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "+1 (555) 137-0042";
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || "";
+
+/** Reviewer rewards. Mirrors backend `points_per_review`; the gift card itself is handed out manually for now. */
+export const POINTS_PER_REVIEW = 10;
+export const WEEKLY_REVIEW_LIMIT = 3;
+export const REWARD_POINTS = 100;
+export const REWARD_LABEL = "$10 Amazon gift card";
