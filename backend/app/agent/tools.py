@@ -183,5 +183,30 @@ FINALIZE_REVIEW = {
     },
 }
 
-ALL_TOOLS = [SEARCH_PLACES, ASK_USER, FINALIZE_REVIEW]
-TOOLS_NO_ASK = [SEARCH_PLACES, FINALIZE_REVIEW]
+REJECT_REVIEW = {
+    "type": "function",
+    "function": {
+        "name": "reject_review",
+        "description": (
+            "Decline the submission because the video is not a business review (no business "
+            "visited, no customer experience described). Calling this ends the submission; the "
+            "reviewer is told to record a real review. Do not use it for a review that merely "
+            "lacks a detail such as the branch or city: ask_user handles those."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "One short line, shown to the reviewer, e.g. "
+                    "'it is a vlog about driving, no business is mentioned'",
+                }
+            },
+            "required": ["reason"],
+        },
+    },
+}
+
+ALL_TOOLS = [SEARCH_PLACES, ASK_USER, FINALIZE_REVIEW, REJECT_REVIEW]
+TOOLS_NO_ASK = [SEARCH_PLACES, FINALIZE_REVIEW, REJECT_REVIEW]

@@ -247,3 +247,16 @@ def test_city_of_handles_junk_locality_and_suffixes():
     assert city_of(accra) == "Accra"
     assert city_of(no_locality) == "Korle Klottey"
     assert city_of({}) is None
+
+
+def test_reject_tool_ends_turn_with_reason():
+    chat = ScriptedChat(
+        [reply(tool_calls=[tool_call("reject_review", {"reason": "a vlog about EV driving"})])]
+    )
+    out = run_extraction_turn(
+        _sub(), Conversation(phone="x"), None, chat=chat, search_fn=lambda *a, **k: []
+    )
+    assert out.kind == "reject" and out.reason == "a vlog about EV driving"
+    names = [t["function"]["name"] for t in chat.calls[0]["tools"]]
+    assert "reject_review" in names
+    assert "reject_review immediately" in chat.calls[0]["messages"][0]["content"]

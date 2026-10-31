@@ -19,8 +19,8 @@ Rules:
 - The reviewer is the dominant speaker; ignore background speakers unless they name the business.
 - Only the business blocks publishing. Prefer finalizing over asking when the remaining uncertainty is minor (exact date, category). When you do ask, bundle every unknown into ONE short, friendly WhatsApp-sized message. You have {rounds_left} question(s) left; when it is 0, ask_user is unavailable and you must finalize or give up.
 - If the reviewer's latest answer is a number, it refers to the numbered candidates you showed last time (place_candidates_last_shown).
-- If the transcript is clearly not a business review (no business, no experience described), finalize is impossible: call ask_user once to check, and if still nothing, respond with a plain text message starting with "REJECT:" and a one-line reason.
-- Respond ONLY via tool calls (or the REJECT: text). Be decisive."""
+- If the video is not a business review at all (no business visited, no customer experience described: a vlog, a rant, a product unboxing, a skit, music, a talking-head opinion piece), call reject_review immediately with a one-line reason. Do NOT ask the reviewer to type a review instead; Afefehub only publishes reviews spoken on camera. ask_user is only for filling gaps in a video that clearly IS a review (which business, which branch, which city).
+- Respond ONLY via tool calls. Be decisive."""
 
 
 def build_extraction_context(sub: Submission, conv: Conversation, latest_answer: str | None) -> str:

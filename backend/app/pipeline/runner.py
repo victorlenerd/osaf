@@ -296,9 +296,10 @@ def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: st
         _set_state(sub, SubmissionState.REJECTED, outcome.reason)
         wa.send_text(
             sub.phone,
-            "I couldn't turn that into a business review "
-            f"({outcome.reason or 'not enough detail'}). Try a reel where you name the "
-            "business and describe your visit.",
+            "This reel doesn't sound like a business review "
+            f"({outcome.reason or 'not enough detail'}), so I can't publish it. Afefehub only "
+            "publishes reviews spoken on camera: record one where you talk about a business "
+            "you visited, what was good and what could improve, and send me that link.",
         )
         return
 

@@ -101,8 +101,8 @@ def run_extraction_turn(
             messages.append(
                 {
                     "role": "user",
-                    "content": "You must respond with a tool call (search_places, ask_user or "
-                    "finalize_review) or a line starting with REJECT:.",
+                    "content": "You must respond with a tool call: search_places, ask_user, "
+                    "finalize_review or reject_review.",
                 }
             )
             continue
@@ -158,6 +158,13 @@ def run_extraction_turn(
                 )
                 continue
 
+            if name == "reject_review":
+                return ExtractionOutcome(
+                    kind="reject",
+                    reason=(args.get("reason") or "not a business review").strip()[:200],
+                    trace=trace,
+                )
+
             if name == "ask_user":
                 if rounds_left <= 0:
                     messages.append(
@@ -165,7 +172,7 @@ def run_extraction_turn(
                             "role": "tool",
                             "tool_call_id": tc.id,
                             "content": json.dumps(
-                                {"error": "no questions left; finalize or REJECT"}
+                                {"error": "no questions left; finalize_review or reject_review"}
                             ),
                         }
                     )
