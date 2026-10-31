@@ -1,0 +1,7 @@
+{
+  "name": "afefehub-brand",
+  "private": true,
+  "description": "Renders the Afefehub logo PNGs from the SVG sources",
+  "scripts": { "export": "node export-logos.cjs" },
+  "devDependencies": { "@resvg/resvg-js": "^2.6.2" }
+}
