@@ -31,7 +31,7 @@ export default function ResultCard({ result }: { result: SearchResult }) {
           <SentimentDot sentiment={result.overall_sentiment} withLabel />
           <span className="muted">{pluralize(result.review_count, "review")}</span>
           {hasReviews && (
-            <span className="font-semibold" style={{ color: "var(--accent)" }}>
+            <span className="font-semibold" style={{ color: "var(--accent-ink)" }}>
               {percent(result.recommend_rate)} recommend
             </span>
           )}

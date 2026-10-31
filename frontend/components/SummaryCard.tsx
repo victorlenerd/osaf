@@ -40,10 +40,9 @@ export default function SummaryCard({ summary }: { summary: Summary | null }) {
 
   return (
     <section className="card overflow-hidden" aria-labelledby="summary-title">
-      <div className="weave" aria-hidden />
       <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="summary-title" className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--accent)" }}>
+          <h2 id="summary-title" className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--accent-ink)" }}>
             AI summary · {pluralize(summary.review_count, "review")}
           </h2>
           <SentimentDot sentiment={summary.overall_sentiment} withLabel />
@@ -53,7 +52,7 @@ export default function SummaryCard({ summary }: { summary: Summary | null }) {
         <div className="mt-5">
           <div className="flex items-baseline justify-between text-sm">
             <span className="font-medium">Would recommend</span>
-            <span className="font-display text-2xl font-bold" style={{ color: "var(--accent)" }}>{percent(summary.recommendation_rate)}</span>
+            <span className="font-display text-2xl font-bold" style={{ color: "var(--accent-ink)" }}>{percent(summary.recommendation_rate)}</span>
           </div>
           <div
             className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full"
@@ -64,7 +63,7 @@ export default function SummaryCard({ summary }: { summary: Summary | null }) {
             aria-valuenow={rate}
             aria-label="Recommendation rate"
           >
-            <div className="h-full rounded-full" style={{ width: `${rate}%`, background: "linear-gradient(90deg, var(--color-navy-800), var(--color-navy-400))" }} />
+            <div className="h-full rounded-full" style={{ width: `${rate}%`, background: "linear-gradient(90deg, var(--color-yellow-600), var(--color-yellow-300))" }} />
           </div>
         </div>
 

@@ -12,8 +12,7 @@ const NAV = [
 export default function Header() {
   const pathname = usePathname();
   return (
-    <header className="sticky top-0 z-20 border-b line backdrop-blur-md" style={{ background: "color-mix(in oklab, var(--bg) 85%, transparent)" }}>
-      <div className="weave" aria-hidden />
+    <header className="sticky top-0 z-20 border-b line backdrop-blur-md" style={{ background: "color-mix(in oklab, var(--bg) 88%, transparent)" }}>
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2" aria-label="Afefehub home">
           <Logo size={26} />

@@ -8,14 +8,15 @@ export default function Footer() {
         <p>
           Built for the <span className="font-medium" style={{ color: "var(--fg)" }}>Meta Global AI Developer Hackathon</span>.
         </p>
-        <nav aria-label="Footer" className="flex gap-4">
+        <nav aria-label="Footer" className="flex flex-wrap gap-x-4 gap-y-1">
           <Link href="/about" className="hover:underline">About</Link>
+          <Link href="/terms" className="hover:underline">Terms</Link>
+          <Link href="/privacy" className="hover:underline">Privacy</Link>
           <a href={REPO_URL || "#"} className="hover:underline" target={REPO_URL ? "_blank" : undefined} rel="noreferrer">
             Open source
           </a>
         </nav>
       </div>
-      <div className="weave" aria-hidden />
     </footer>
   );
 }

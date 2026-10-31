@@ -5,7 +5,6 @@ export default function HowToSubmit({ compact = false }: { compact?: boolean }) 
   const waHref = WHATSAPP_NUMBER ? `https://wa.me/${WHATSAPP_NUMBER.replace(/[^\d]/g, "")}` : undefined;
   return (
     <section className="card overflow-hidden" aria-labelledby="howto-title">
-      <div className="weave" aria-hidden />
       <div className={compact ? "p-4 sm:p-5" : "p-5 sm:p-8"}>
         <h2 id="howto-title" className="font-display text-xl font-semibold sm:text-2xl" style={{ color: "var(--brand)" }}>
           Reviewed a place on camera? Put it on the map.

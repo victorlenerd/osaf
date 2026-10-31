@@ -37,8 +37,8 @@ const STEPS = [
 
 export default function AboutPage() {
   return (
-    <div className="mx-auto max-w-3xl pt-8 sm:pt-14">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>About</p>
+    <div className="max-w-3xl pt-8 sm:pt-14">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent-ink)" }}>About</p>
       <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" style={{ color: "var(--brand)" }}>
         Reviews you can look in the eye.
       </h1>
@@ -79,7 +79,7 @@ export default function AboutPage() {
         </h2>
         <p className="mt-3 leading-relaxed muted">
           Post your reel publicly, then send the link to the Afefehub WhatsApp number shown on the{" "}
-          <Link href="/" className="underline" style={{ color: "var(--accent)" }}>home page</Link>. There is no app to
+          <Link href="/" className="underline" style={{ color: "var(--accent-ink)" }}>home page</Link>. There is no app to
           install and no account to create. Within a few minutes the review appears on the business page with your reel
           embedded.
         </p>

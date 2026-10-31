@@ -60,24 +60,24 @@ export default function HomePage() {
 
   return (
     <div className="pt-8 sm:pt-14">
-      <section className="mx-auto max-w-3xl text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
+      <section className="max-w-3xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent-ink)" }}>
           Video reviews · Africa
         </p>
         <h1 className="font-display mt-3 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl" style={{ color: "var(--brand)" }}>
           Real reviews from real faces.
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed muted sm:text-lg">
+        <p className="mt-4 max-w-xl text-base leading-relaxed muted sm:text-lg">
           Find businesses across Africa reviewed on video. Every review is a public Instagram reel by a real
           person, checked and summarised by AI.
         </p>
       </section>
 
-      <div className="mx-auto mt-8 max-w-3xl">
+      <div className="mt-8 max-w-3xl">
         <SearchBox value={state} onChange={setState} onSubmit={submitNow} busy={status === "loading"} />
       </div>
 
-      <section className="mx-auto mt-8 max-w-3xl" aria-live="polite" aria-busy={status === "loading"}>
+      <section className="mt-8 max-w-3xl" aria-live="polite" aria-busy={status === "loading"}>
         {status === "loading" && (
           <ul className="grid gap-3">
             <SkeletonCard />
@@ -106,7 +106,7 @@ export default function HomePage() {
           </>
         )}
         {status === "done" && results.length === 0 && hasQuery && (
-          <div className="card p-6 text-center">
+          <div className="card p-6">
             <p className="font-display text-lg font-semibold">Nothing here yet.</p>
             <p className="mt-1 text-sm muted">
               No business matches that search. Know a good one? Review it on video and it will show up here.
@@ -115,7 +115,7 @@ export default function HomePage() {
         )}
       </section>
 
-      <div className={`mx-auto max-w-3xl ${status === "done" && results.length > 0 ? "mt-12" : "mt-8"}`}>
+      <div className={`max-w-3xl ${status === "done" && results.length > 0 ? "mt-12" : "mt-8"}`}>
         <HowToSubmit compact={status === "done" && results.length > 0} />
       </div>
     </div>

@@ -108,7 +108,7 @@ export default function BusinessView() {
         </h1>
         <p className="mt-2 text-base muted">{business.formatted_address}</p>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-          <a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+          <a href={maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent-ink)" }}>
             <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11Z" /><circle cx="12" cy="10" r="2.5" />
             </svg>

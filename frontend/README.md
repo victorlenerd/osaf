@@ -71,7 +71,8 @@ aws cloudfront create-invalidation --distribution-id <DISTRIBUTION_ID> --paths "
 
 ## Project layout
 
-- `app/` pages: `/` (search), `/business` (business page, client-side `useSearchParams` in a Suspense boundary), `/about`, `not-found.tsx`
+- `app/` pages: `/` (search), `/business` (business page, client-side `useSearchParams` in a Suspense boundary), `/about`, `/terms`, `/privacy`, `not-found.tsx`
+- `lib/legal.ts` entity name, address, contact mailboxes, governing law and effective dates used by the Terms and Privacy pages. Review before launch.
 - `components/` header, footer, search box, result card, summary card, review card, Instagram embed, badges
 - `lib/api.ts` typed fetchers, `lib/types.ts` API types, `lib/constants.ts` countries, categories, language names
 - `mock/` local mock API
