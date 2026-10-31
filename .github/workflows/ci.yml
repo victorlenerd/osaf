@@ -16,7 +16,6 @@ jobs:
       - run: pytest -q
   frontend:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('frontend/package.json') != '' }}
     defaults: { run: { working-directory: frontend } }
     steps:
       - uses: actions/checkout@v4
