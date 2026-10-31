@@ -77,7 +77,9 @@ def generate_summary(
             messages,
             response_format={"type": "json_object"},
             temperature=0.2,
-            max_tokens=800,
+            # Default reasoning overruns any sane max_tokens on this task (see the Google variant).
+            max_tokens=1500,
+            reasoning_effort="minimal",
         )
         data = json.loads(resp.choices[0].message.content or "{}")
     except Exception:  # noqa: BLE001
@@ -155,7 +157,10 @@ def summarize_google_reviews(
             messages,
             response_format={"type": "json_object"},
             temperature=0.2,
-            max_tokens=800,
+            # Muse Spark's default reasoning burns ~5k tokens / 35 s on this task and overruns
+            # any sane max_tokens; "minimal" answers in ~5 s with ~750 tokens.
+            max_tokens=1500,
+            reasoning_effort="minimal",
             timeout=settings.google_summary_timeout_seconds,
         )
         data = json.loads(resp.choices[0].message.content or "{}")

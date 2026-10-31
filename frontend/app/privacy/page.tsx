@@ -198,7 +198,12 @@ const sections: LegalSection[] = [
         <ul>
           <li><strong>Meta Platforms</strong>: the WhatsApp Business Cloud API carries your messages to us; Meta&rsquo;s model API runs the face check, transcription and extraction on video frames, audio and text we send it;</li>
           <li><strong>Amazon Web Services</strong>: hosts our website, API, database, search index and stored media;</li>
-          <li><strong>Google</strong>: resolves business names to places through the Places API. We send the business name and area, not your personal data;</li>
+          <li>
+            <strong>Google</strong>: resolves business names to places through the Places API. We send the business name and area, not
+            your personal data. When a business page shows Google reviews, that review content (reviewer names, ratings and text) is
+            fetched live from Google Places each time the page loads and is not stored by us; we cache only the Google place
+            identifier and an AI-generated summary of those reviews, for up to 24 hours;
+          </li>
           <li><strong>Instagram</strong>: we fetch your public reel from Instagram, and the business page embeds it from Instagram&rsquo;s servers, which means Instagram learns that a visitor loaded that embed.</li>
         </ul>
         <h3>Others</h3>

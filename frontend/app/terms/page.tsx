@@ -330,9 +330,15 @@ const sections: LegalSection[] = [
       <>
         <p>
           The Service relies on third parties, including Instagram (hosting and embedding reels), WhatsApp (receiving submissions), Meta&rsquo;s
-          model APIs (face check, transcription, extraction), Google (place data and map links) and Amazon Web Services (hosting). Their
-          terms and privacy policies apply to your use of their services. We are not responsible for their availability, content or
-          conduct, and embedded Instagram content may set cookies or collect data under Meta&rsquo;s policies.
+          model APIs (face check, transcription, extraction), Google (place data, map links and Google reviews) and Amazon Web Services
+          (hosting). Their terms and privacy policies apply to your use of their services. We are not responsible for their availability,
+          content or conduct, and embedded Instagram content may set cookies or collect data under Meta&rsquo;s policies.
+        </p>
+        <p>
+          Where a business page shows <strong>reviews from Google</strong>, that content is fetched live from Google Places when you open
+          the page and is shown as written by its authors; we do not store it, and we cache only the Google place identifier and our
+          AI-generated summary of those reviews for up to 24 hours. Google reviews are Google&rsquo;s content and are subject to
+          Google&rsquo;s terms, not ours.
         </p>
       </>
     ),

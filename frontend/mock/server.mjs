@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { createReadStream, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { businesses } from "./fixtures.mjs";
+import { businesses, googlePlaces, placeCandidates } from "./fixtures.mjs";
 
 const SAMPLE_VOICE = join(dirname(fileURLToPath(import.meta.url)), "sample-voice.m4a");
 
@@ -104,6 +104,30 @@ createServer((req, res) => {
     const hit = businesses.find((b) => b.business.business_id === decodeURIComponent(m[1]));
     if (!hit) return send(res, 404, { detail: "not found" });
     return setTimeout(() => send(res, 200, hit), 250);
+  }
+
+  // Google Places lookup: only called by the frontend when Afefehub search is empty.
+  if (url.pathname === "/api/places/lookup") {
+    const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+    const country = url.searchParams.get("country");
+    const limit = Math.min(5, Math.max(1, Number(url.searchParams.get("limit") || 5)));
+    if (q.length < 2) return send(res, 422, { detail: "q must be at least 2 characters" });
+    if (q === "busy") return send(res, 429, { detail: "too many google lookups" });
+    if (q === "nokey") return send(res, 503, { detail: "google lookup unavailable" });
+    const candidates = placeCandidates
+      .filter((c) => !country || c.country === country)
+      .filter((c) => [c.name, c.formatted_address, c.city].join(" ").toLowerCase().includes(q))
+      .slice(0, limit);
+    return setTimeout(() => send(res, 200, { candidates }), 400);
+  }
+
+  // Live Google reviews + AI summary for a place id. afefe: ids and unknown ids → 404.
+  const g = url.pathname.match(/^\/api\/places\/([^/]+)\/google$/);
+  if (g) {
+    const id = decodeURIComponent(g[1]);
+    const hit = id.startsWith("afefe:") ? undefined : googlePlaces[id];
+    if (!hit) return send(res, 404, { detail: "not found" });
+    return setTimeout(() => send(res, 200, hit), 600);
   }
 
   if (url.pathname === "/health") return send(res, 200, { ok: true });

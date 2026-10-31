@@ -290,3 +290,258 @@ export const businesses = [
     reviews: [],
   },
 ];
+
+/* ---- Google Places mock data (GET /api/places/lookup, GET /api/places/:id/google) ---- */
+
+// Candidates returned by the lookup. The mock matches `q` as a case-insensitive substring of
+// name/address/city, so e.g. "zzz" returns zero candidates.
+export const placeCandidates = [
+  {
+    place_id: "ChIJ_mock_bukka_hut_lekki",
+    name: "Bukka Hut Lekki",
+    formatted_address: "Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
+    lat: 6.4474,
+    lng: 3.4734,
+    country: "NG",
+    city: "Lagos",
+    primary_type: "nigerian_restaurant",
+    business_status: "OPERATIONAL",
+  },
+  {
+    place_id: "ChIJ_mock_bukka_hut_ikeja",
+    name: "Bukka Hut Ikeja",
+    formatted_address: "Allen Avenue, Ikeja, Lagos, Nigeria",
+    lat: 6.6018,
+    lng: 3.3515,
+    country: "NG",
+    city: "Lagos",
+    primary_type: "restaurant",
+    business_status: "OPERATIONAL",
+  },
+  {
+    place_id: "ChIJ_mock_shoprite_closed",
+    name: "Shoprite Sandton (old site)",
+    formatted_address: "Rivonia Road, Sandton, Johannesburg, South Africa",
+    lat: -26.1076,
+    lng: 28.0567,
+    country: "ZA",
+    city: "Johannesburg",
+    primary_type: "supermarket",
+    business_status: "CLOSED_PERMANENTLY",
+  },
+  {
+    place_id: "ChIJ_mock_nairobi_ratings_only",
+    name: "Kilimanjaro Jamia Nairobi",
+    formatted_address: "Kimathi Street, Nairobi CBD, Nairobi, Kenya",
+    lat: -1.2841,
+    lng: 36.8233,
+    country: "KE",
+    city: "Nairobi",
+    primary_type: "restaurant",
+    business_status: "OPERATIONAL",
+  },
+  {
+    // Known to the lookup but Place Details "fails" → the business page shows "Business not found".
+    place_id: "ChIJ_mock_missing_details",
+    name: "Ghost Lounge Accra",
+    formatted_address: "Oxford Street, Osu, Accra, Ghana",
+    lat: 5.5571,
+    lng: -0.1823,
+    country: "GH",
+    city: "Accra",
+    primary_type: "bar",
+    business_status: "OPERATIONAL",
+  },
+];
+
+function gReview(author, rating, text, relative, publish, lang = "en") {
+  const slug = author.toLowerCase().replace(/[^a-z]+/g, "-");
+  return {
+    author_name: author,
+    author_uri: `https://www.google.com/maps/contrib/${slug}/reviews`,
+    author_photo_uri: null,
+    rating,
+    text,
+    language: text ? lang : null,
+    relative_time: relative,
+    publish_time: publish,
+    google_maps_uri: `https://www.google.com/maps/reviews/data=!mock!${slug}`,
+  };
+}
+
+function googleResponse(place, summary, reviews) {
+  return { place, summary, reviews, attribution: "Reviews from Google" };
+}
+
+const bukkaReviews = [
+  gReview("Tunde A.", 5, "Honestly the best amala and ewedu in Lekki. Portions are big and the staff are quick even when the place is full after work.", "2 weeks ago", "2026-10-14T18:02:00Z"),
+  gReview("Ngozi Okafor", 4, "Good food, fair prices. Parking is a nightmare on Fridays though, come early or order delivery.", "a month ago", "2026-09-29T12:40:00Z"),
+  gReview("David M.", 2, "Waited 40 minutes for jollof that arrived lukewarm. Staff apologised but no one offered to fix it. Used to be better.", "a month ago", "2026-09-21T20:11:00Z"),
+  gReview("Chiamaka E.", 5, "", "2 months ago", "2026-08-30T09:15:00Z"), // rating-only review
+  gReview("Seyi B.", 4, "Clean, air-conditioned and the pepper soup is properly spicy. Efo riro slightly salty on my last visit.", "3 months ago", "2026-07-26T14:05:00Z"),
+];
+
+export const googlePlaces = {
+  // Candidate from the lookup: a full Google-only business page.
+  ChIJ_mock_bukka_hut_lekki: googleResponse(
+    {
+      place_id: "ChIJ_mock_bukka_hut_lekki",
+      name: "Bukka Hut Lekki",
+      formatted_address: "Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
+      city: "Lagos",
+      country: "NG",
+      lat: 6.4474,
+      lng: 3.4734,
+      primary_type: "nigerian_restaurant",
+      rating: 4.1,
+      user_rating_count: 1284,
+      google_maps_uri: "https://maps.google.com/?cid=mock-bukka-lekki",
+      business_status: "OPERATIONAL",
+    },
+    {
+      overall_sentiment: "positive",
+      headline: "Big, well-priced Nigerian plates and quick staff, let down by parking and the occasional slow, lukewarm order.",
+      recurring_praise: ["Generous portions at fair prices", "Fast service even when busy", "Clean, air-conditioned dining room"],
+      recurring_complaints: ["Parking is difficult on busy evenings", "Some orders arrive slow or lukewarm"],
+      standout_items: ["Amala and ewedu", "Pepper soup", "Jollof rice"],
+      rating: 4.1,
+      user_rating_count: 1284,
+      reviews_considered: 4,
+      generated_at: now,
+      model_version: "muse-spark-1.3",
+    },
+    bukkaReviews,
+  ),
+  ChIJ_mock_bukka_hut_ikeja: googleResponse(
+    {
+      place_id: "ChIJ_mock_bukka_hut_ikeja",
+      name: "Bukka Hut Ikeja",
+      formatted_address: "Allen Avenue, Ikeja, Lagos, Nigeria",
+      city: "Lagos",
+      country: "NG",
+      lat: 6.6018,
+      lng: 3.3515,
+      primary_type: "restaurant",
+      rating: 3.6,
+      user_rating_count: 412,
+      google_maps_uri: "https://maps.google.com/?cid=mock-bukka-ikeja",
+      business_status: "OPERATIONAL",
+    },
+    {
+      overall_sentiment: "mixed",
+      headline: "Decent food when it is fresh, but reviewers split on service and consistency.",
+      recurring_praise: ["Tasty rice dishes", "Central location"],
+      recurring_complaints: ["Inconsistent food quality", "Slow or inattentive service"],
+      standout_items: ["Fried rice", "Chicken"],
+      rating: 3.6,
+      user_rating_count: 412,
+      reviews_considered: 3,
+      generated_at: now,
+      model_version: "muse-spark-1.3",
+    },
+    [
+      gReview("Bola S.", 4, "Fried rice and chicken were on point today. Service was slow but the food made up for it.", "3 weeks ago", "2026-10-08T13:20:00Z"),
+      gReview("Ifeoma N.", 2, "Rice tasted like it had been sitting since morning. Second time this has happened.", "a month ago", "2026-09-25T15:00:00Z"),
+      gReview("Kunle O.", 5, "Convenient spot on Allen, quick lunch, no complaints.", "2 months ago", "2026-08-28T12:10:00Z"),
+    ],
+  ),
+  // Permanently closed place: still returns data; the page shows a "Permanently closed" badge and no submit CTA.
+  ChIJ_mock_shoprite_closed: googleResponse(
+    {
+      place_id: "ChIJ_mock_shoprite_closed",
+      name: "Shoprite Sandton (old site)",
+      formatted_address: "Rivonia Road, Sandton, Johannesburg, South Africa",
+      city: "Johannesburg",
+      country: "ZA",
+      lat: -26.1076,
+      lng: 28.0567,
+      primary_type: "supermarket",
+      rating: 3.9,
+      user_rating_count: 2210,
+      google_maps_uri: "https://maps.google.com/?cid=mock-shoprite-sandton",
+      business_status: "CLOSED_PERMANENTLY",
+    },
+    {
+      overall_sentiment: "mixed",
+      headline: "A convenient, well-stocked store in its day, with long checkout queues the recurring gripe.",
+      recurring_praise: ["Wide product range", "Convenient location"],
+      recurring_complaints: ["Long queues at checkout"],
+      standout_items: ["Bakery section"],
+      rating: 3.9,
+      user_rating_count: 2210,
+      reviews_considered: 2,
+      generated_at: now,
+      model_version: "muse-spark-1.3",
+    },
+    [
+      gReview("Thabo K.", 4, "Always had what I needed, bakery was great. Sad it has closed.", "a year ago", "2025-10-02T10:00:00Z"),
+      gReview("Lerato M.", 3, "Decent store but the queues on Saturdays were ridiculous.", "a year ago", "2025-09-12T16:30:00Z"),
+    ],
+  ),
+  // Ratings but no written reviews: summary.headline is "" and the page shows the stars alone.
+  ChIJ_mock_nairobi_ratings_only: googleResponse(
+    {
+      place_id: "ChIJ_mock_nairobi_ratings_only",
+      name: "Kilimanjaro Jamia Nairobi",
+      formatted_address: "Kimathi Street, Nairobi CBD, Nairobi, Kenya",
+      city: "Nairobi",
+      country: "KE",
+      lat: -1.2841,
+      lng: 36.8233,
+      primary_type: "restaurant",
+      rating: 4.4,
+      user_rating_count: 37,
+      google_maps_uri: "https://maps.google.com/?cid=mock-kilimanjaro",
+      business_status: "OPERATIONAL",
+    },
+    {
+      overall_sentiment: "positive",
+      headline: "",
+      recurring_praise: [],
+      recurring_complaints: [],
+      standout_items: [],
+      rating: 4.4,
+      user_rating_count: 37,
+      reviews_considered: 0,
+      generated_at: now,
+      model_version: "rating-only",
+    },
+    [gReview("Wanjiru K.", 5, "", "4 months ago", "2026-06-20T11:00:00Z"), gReview("Omar A.", 4, "", "6 months ago", "2026-04-11T09:00:00Z")],
+  ),
+  // An existing Afefehub business with source "google": powers the "On Google" section under its Afefehub reviews.
+  biz_mama_put_yaba: googleResponse(
+    {
+      place_id: "biz_mama_put_yaba",
+      name: "Mama Put Kitchen",
+      formatted_address: "12 Herbert Macaulay Way, Yaba, Lagos, Nigeria",
+      city: "Lagos",
+      country: "NG",
+      lat: 6.5095,
+      lng: 3.3711,
+      primary_type: "nigerian_restaurant",
+      rating: 4.5,
+      user_rating_count: 318,
+      google_maps_uri: "https://maps.google.com/?cid=mock-mama-put",
+      business_status: "OPERATIONAL",
+    },
+    {
+      overall_sentiment: "positive",
+      headline: "Google reviewers agree with Afefehub: smoky jollof worth the lunchtime queue.",
+      recurring_praise: ["Smoky, well-seasoned jollof", "Warm, familiar service"],
+      recurring_complaints: ["Lunchtime queue"],
+      standout_items: ["Jollof rice", "Catfish pepper soup"],
+      rating: 4.5,
+      user_rating_count: 318,
+      reviews_considered: 4,
+      generated_at: now,
+      model_version: "muse-spark-1.3",
+    },
+    [
+      gReview("Femi A.", 5, "The jollof here has that party smoke flavour. Go before 1pm or you will queue.", "a week ago", "2026-10-22T13:00:00Z"),
+      gReview("Grace O.", 4, "Pepper soup was excellent, seating is tight.", "3 weeks ago", "2026-10-09T12:30:00Z"),
+      gReview("Yusuf I.", 5, "", "a month ago", "2026-09-30T10:00:00Z"),
+      gReview("Ada N.", 4, "Affordable and filling. Zobo was very cold, just how I like it.", "2 months ago", "2026-08-27T14:45:00Z"),
+      gReview("Emeka U.", 3, "Food is good but they ran out of fried rice by 2pm.", "3 months ago", "2026-07-30T15:10:00Z"),
+    ],
+  ),
+};

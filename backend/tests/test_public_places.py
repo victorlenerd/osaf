@@ -128,6 +128,7 @@ def test_google_reviews_cache_miss_then_hit(world):
     sent = json.loads(chat.calls[0]["messages"][1]["content"])
     assert [x["text"] for x in sent["reviews"]] == ["Best jollof."]
     assert chat.calls[0]["timeout"] == 20
+    assert chat.calls[0]["reasoning_effort"] == "minimal"
 
     # Second view: reviews fetched live again, summary served from cache (no LLM call).
     r2 = c.get("/api/places/ChIJabc/google")

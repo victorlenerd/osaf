@@ -41,6 +41,7 @@ class MetaClient:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         timeout: float | None = None,
+        reasoning_effort: str | None = None,
     ) -> Any:
         kwargs: dict[str, Any] = {
             "model": model or get_settings().spark_model,
@@ -50,6 +51,8 @@ class MetaClient:
         }
         if timeout is not None:  # per-request override of the client's 180 s default
             kwargs["timeout"] = timeout
+        if reasoning_effort:  # Muse Spark reasons by default; "minimal" keeps short JSON tasks fast
+            kwargs["reasoning_effort"] = reasoning_effort
         if tools:
             kwargs["tools"] = tools
             if tool_choice:
