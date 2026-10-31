@@ -1,4 +1,5 @@
 import { WHATSAPP_NUMBER } from "@/lib/constants";
+import WhatsAppIcon from "./WhatsAppIcon";
 
 export default function HowToSubmit({ compact = false }: { compact?: boolean }) {
   const number = WHATSAPP_NUMBER || "+000 000 000 0000";
@@ -32,7 +33,15 @@ export default function HowToSubmit({ compact = false }: { compact?: boolean }) 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <span className="text-sm muted">Afefehub WhatsApp:</span>
           {waHref ? (
-            <a href={waHref} target="_blank" rel="noreferrer" className="rounded-full px-4 py-2 text-sm font-semibold" style={{ background: "#25D366", color: "#062b14" }}>
+            <a
+              href={waHref}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-full py-2 pl-3 pr-4 text-sm font-semibold"
+              style={{ background: "#25D366", color: "#062b14" }}
+              aria-label={`Chat with Afefehub on WhatsApp, ${number}`}
+            >
+              <WhatsAppIcon size={18} />
               {number}
             </a>
           ) : (

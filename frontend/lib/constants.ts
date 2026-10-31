@@ -59,5 +59,6 @@ export function languageName(code: string): string {
   return LANGUAGE_NAMES[base] ?? code.toUpperCase();
 }
 
-export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "";
+/** Shown on the site and used for the wa.me link. Override with NEXT_PUBLIC_WHATSAPP_NUMBER. */
+export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "+1 (555) 137-0042";
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || "";
