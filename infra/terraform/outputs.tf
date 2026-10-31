@@ -85,7 +85,7 @@ output "deploy_site" {
   description = "Publish the Next.js static export to the site bucket (after dns_delegated = true)."
   value       = <<-EOT
     export AWS_PROFILE=prod
-    (cd frontend && npm run build)
+    (cd frontend && pnpm build)
     aws s3 sync frontend/out s3://${aws_s3_bucket.site.bucket}/ --delete
     aws cloudfront create-invalidation --distribution-id ${coalesce(one(aws_cloudfront_distribution.site[*].id), "<cloudfront_distribution_id>")} --paths '/*'
   EOT
