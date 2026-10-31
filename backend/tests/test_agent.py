@@ -1,10 +1,12 @@
 import json
 
 from app.agent.extract import run_extraction_turn
-from app.agent.summary import generate_summary
+from app.agent.summary import generate_summary, summarize_google_reviews
 from app.models import (
     Business,
     Conversation,
+    GooglePlaceDetails,
+    GoogleReview,
     PlaceCandidate,
     PlaceRef,
     Review,
@@ -260,3 +262,72 @@ def test_reject_tool_ends_turn_with_reason():
     names = [t["function"]["name"] for t in chat.calls[0]["tools"]]
     assert "reject_review" in names
     assert "reject_review immediately" in chat.calls[0]["messages"][0]["content"]
+
+
+GPLACE = GooglePlaceDetails(
+    place_id="ChIJ123",
+    name="Mama Put Kitchen",
+    formatted_address="12 Allen Ave, Ikeja, Lagos",
+    primary_type="restaurant",
+    rating=4.4,
+    user_rating_count=120,
+    reviews=[
+        GoogleReview(
+            author_name="Ada", rating=5, text="Jollof dey burst brain.", relative_time="a month ago"
+        ),
+        GoogleReview(
+            author_name="Bola",
+            rating=4,
+            text="Good suya, parking is hard.",
+            relative_time="3 months ago",
+        ),
+        GoogleReview(author_name="Chi", rating=2, text="", relative_time="a year ago"),
+    ],
+)
+
+
+def test_google_summary_uses_textual_reviews_and_model_output():
+    chat = ScriptedChat(
+        [
+            reply(
+                json.dumps(
+                    {
+                        "overall_sentiment": "mixed",
+                        "headline": "Loved for jollof and suya; parking is a struggle",
+                        "recurring_praise": ["jollof", "suya", 7, {"bad": 1}],
+                        "recurring_complaints": ["parking"],
+                        "standout_items": ["jollof rice", "suya"],
+                    }
+                )
+            )
+        ]
+    )
+    s = summarize_google_reviews(GPLACE, chat=chat)
+    assert s.overall_sentiment == "mixed"
+    assert s.headline.startswith("Loved for jollof")
+    assert s.recurring_praise == ["jollof", "suya", "7"]  # dicts dropped, scalars kept
+    assert s.recurring_complaints == ["parking"] and s.standout_items == ["jollof rice", "suya"]
+    assert s.rating == 4.4 and s.user_rating_count == 120 and s.reviews_considered == 2
+    assert s.expires_at is None  # the store sets the TTL
+    payload = json.loads(chat.calls[0]["messages"][1]["content"])
+    assert [r["text"] for r in payload["reviews"]] == [
+        "Jollof dey burst brain.",
+        "Good suya, parking is hard.",
+    ]
+    assert chat.calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_google_summary_falls_back_to_rating_when_model_fails():
+    s = summarize_google_reviews(GPLACE, chat=ScriptedChat([]))
+    assert s.overall_sentiment == "positive" and s.headline == "" and s.reviews_considered == 2
+    low = GPLACE.model_copy(update={"rating": 2.0})
+    assert summarize_google_reviews(low, chat=ScriptedChat([])).overall_sentiment == "negative"
+    unrated = GPLACE.model_copy(update={"rating": None})
+    assert summarize_google_reviews(unrated, chat=ScriptedChat([])).overall_sentiment == "mixed"
+
+
+def test_google_summary_skips_model_without_textual_reviews():
+    chat = ScriptedChat([])
+    bare = GPLACE.model_copy(update={"reviews": [GoogleReview(rating=4)]})
+    s = summarize_google_reviews(bare, chat=chat)
+    assert chat.calls == [] and s.reviews_considered == 0 and s.overall_sentiment == "positive"

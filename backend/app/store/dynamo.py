@@ -2,6 +2,7 @@
 
 PK / SK layout
   CONV#<phone>        META                       Conversation
+  CONV#<phone>        POINTS                     reviewer reward balance {points, updated_at}
   SUB#<id>            META                       Submission   GSI1: CONV#<phone>/SUB#<created>
   WAMSG#<wamid>       META                       webhook dedupe (TTL 24h)
   REEL#<shortcode>    META                       one review per reel
@@ -9,6 +10,8 @@ PK / SK layout
   BIZ#<id>            REV#<created_at>#<rid>     Review       GSI1: REVIEWER#<hash>/REV#<created>
   REVIEW#<rid>        META                       pointer {business_id, sk} for lookup by id
   BIZ#<id>            SUMMARY                    BusinessSummary
+  GPLACE#<place_id>   SUMMARY                    GoogleReviewSummary (TTL; raw Google reviews
+                                                 are never stored)
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from app.models import (
     Business,
     BusinessSummary,
     Conversation,
+    GoogleReviewSummary,
     Review,
     ReviewExtraction,
     Submission,
@@ -250,6 +254,37 @@ def list_reviews(business_id: str, limit: int = 100) -> list[Review]:
     return [Review(**_from_item(i)) for i in r.get("Items", [])]
 
 
+def list_reviews_by_reviewer_since(
+    reviewer_hash: str, since_iso: str, limit: int = 50
+) -> list[Review]:
+    """Reviews one person published at or after `since_iso`, oldest first."""
+    r = _table().query(
+        IndexName="GSI1",
+        KeyConditionExpression="GSI1PK = :p AND GSI1SK >= :s",
+        ExpressionAttributeValues={":p": f"REVIEWER#{reviewer_hash}", ":s": f"REV#{since_iso}"},
+        ScanIndexForward=True,
+        Limit=limit,
+    )
+    return [Review(**_from_item(i)) for i in r.get("Items", [])]
+
+
+# ------------------------------------------------------------------------ points
+def add_points(phone: str, n: int) -> int:
+    """Atomically add `n` to a reviewer's balance (own item, so no read-modify-write race)."""
+    r = _table().update_item(
+        Key={"PK": f"CONV#{phone}", "SK": "POINTS"},
+        UpdateExpression="ADD points :n SET updated_at = :now",
+        ExpressionAttributeValues={":n": n, ":now": now_iso()},
+        ReturnValues="UPDATED_NEW",
+    )
+    return int(r["Attributes"]["points"])
+
+
+def get_points(phone: str) -> int:
+    r = _table().get_item(Key={"PK": f"CONV#{phone}", "SK": "POINTS"})
+    return int(r["Item"].get("points", 0)) if "Item" in r else 0
+
+
 # ----------------------------------------------------------------------- summary
 def get_summary(business_id: str) -> BusinessSummary | None:
     r = _table().get_item(Key={"PK": f"BIZ#{business_id}", "SK": "SUMMARY"})
@@ -258,6 +293,24 @@ def get_summary(business_id: str) -> BusinessSummary | None:
 
 def put_summary(business_id: str, s: BusinessSummary) -> None:
     _table().put_item(Item={"PK": f"BIZ#{business_id}", "SK": "SUMMARY", **_to_item(s)})
+
+
+# --------------------------------------------------- Google reviews summary cache
+def get_google_summary(place_id: str) -> GoogleReviewSummary | None:
+    """Cached summary, or None when missing or past its TTL (Dynamo deletes lazily, up to 48 h)."""
+    r = _table().get_item(Key={"PK": f"GPLACE#{place_id}", "SK": "SUMMARY"})
+    if "Item" not in r:
+        return None
+    s = GoogleReviewSummary(**_from_item(r["Item"]))
+    if s.expires_at is None or s.expires_at <= int(time.time()):
+        return None
+    return s
+
+
+def put_google_summary(place_id: str, s: GoogleReviewSummary) -> None:
+    if s.expires_at is None:
+        s.expires_at = int(time.time()) + get_settings().google_summary_ttl_seconds
+    _table().put_item(Item={"PK": f"GPLACE#{place_id}", "SK": "SUMMARY", **_to_item(s)})
 
 
 # ------------------------------------------------------------------- maintenance

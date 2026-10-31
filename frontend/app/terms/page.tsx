@@ -109,9 +109,16 @@ const sections: LegalSection[] = [
           </li>
         </ul>
         <p>
-          Submission is free. We do not pay for reviews and no business may pay you through us. We may limit the number of reviews one
-          person may submit for the same business, and we may ask you clarifying questions over WhatsApp (for example, which of two
-          similarly named businesses you meant) before publishing.
+          Submission is free. We do not pay for reviews and no business may pay you through us. To keep reviews genuine, each person
+          may publish at most three reviews in any rolling seven-day period, and we may limit the number of reviews one person may
+          submit for the same business. We may ask you clarifying questions over WhatsApp (for example, which of two similarly named
+          businesses you meant) before publishing.
+        </p>
+        <p>
+          <strong>Points.</strong> Each published review earns a fixed number of Afefehub points as a thank-you. Points are awarded in
+          the same amount for every published review whether it is positive, mixed or negative, so they never reward a particular
+          opinion. Points have no cash value, cannot be redeemed, transferred or sold, are not payment for a review, and we may change
+          or withdraw the points programme at any time.
         </p>
       </>
     ),

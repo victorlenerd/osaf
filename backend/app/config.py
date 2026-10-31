@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     sam_model: str = "sam-3.1"
 
     google_places_api_key: str = ""
+    # On-demand Google reviews: how long the generated summary is cached (raw reviews never are),
+    # and how long a browser-facing request may wait on Muse Spark for that summary.
+    google_summary_ttl_seconds: int = 86400
+    google_summary_timeout_seconds: int = 20
 
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
@@ -43,6 +47,8 @@ class Settings(BaseSettings):
     dominant_speaker_threshold: float = 0.6
     stale_stage_seconds: int = 600
     max_voice_note_seconds: int = 600  # Muse Voice Transcribe file limit is 10 minutes
+    weekly_review_limit: int = 3  # published reviews per reviewer in any rolling 7 days
+    points_per_review: int = 10  # flat reward per published review
     phone_hash_salt: str = "afefehub"
     work_dir: str = "/tmp/afefehub"
 

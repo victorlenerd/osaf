@@ -44,6 +44,13 @@ export function categoryLabel(value: string): string {
   return CATEGORY_LABELS.get(value) ?? value.replace(/_/g, " ");
 }
 
+/** Humanise a Google Places primary type such as "nigerian_restaurant" → "Nigerian restaurant". */
+export function placeTypeLabel(value: string | null | undefined): string {
+  if (!value) return "";
+  const words = value.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 const COUNTRY_NAMES = new Map<string, string>(COUNTRIES.map((c) => [c.code, c.name]));
 export function countryName(code: string): string {
   return COUNTRY_NAMES.get(code) ?? code;

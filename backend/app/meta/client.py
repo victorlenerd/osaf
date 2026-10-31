@@ -40,6 +40,7 @@ class MetaClient:
         response_format: dict | None = None,
         temperature: float = 0.2,
         max_tokens: int = 2048,
+        timeout: float | None = None,
     ) -> Any:
         kwargs: dict[str, Any] = {
             "model": model or get_settings().spark_model,
@@ -47,6 +48,8 @@ class MetaClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if timeout is not None:  # per-request override of the client's 180 s default
+            kwargs["timeout"] = timeout
         if tools:
             kwargs["tools"] = tools
             if tool_choice:

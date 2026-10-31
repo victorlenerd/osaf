@@ -1,4 +1,4 @@
-import type { BusinessResponse, Category, SearchResponse } from "./types";
+import type { BusinessResponse, Category, GooglePlaceResponse, LookupResponse, SearchResponse } from "./types";
 
 export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000").replace(/\/$/, "");
 
@@ -44,4 +44,24 @@ export function searchBusinesses(params: SearchParams, signal?: AbortSignal): Pr
 
 export function getBusiness(id: string, signal?: AbortSignal): Promise<BusinessResponse> {
   return getJson<BusinessResponse>(`/api/business/${encodeURIComponent(id)}`, signal);
+}
+
+export interface LookupParams {
+  q: string;
+  country?: string;
+  limit?: number;
+}
+
+/** Ask Google Places (via the API) for businesses matching a name. Only called when Afefehub search is empty. */
+export function lookupPlaces(params: LookupParams, signal?: AbortSignal): Promise<LookupResponse> {
+  const qs = new URLSearchParams();
+  qs.set("q", params.q);
+  if (params.country) qs.set("country", params.country);
+  qs.set("limit", String(params.limit ?? 5));
+  return getJson<LookupResponse>(`/api/places/lookup?${qs.toString()}`, signal);
+}
+
+/** Live Google reviews (max 5) plus an AI summary for a place. 404 for unknown ids and any `afefe:` id. */
+export function getGooglePlace(id: string, signal?: AbortSignal): Promise<GooglePlaceResponse> {
+  return getJson<GooglePlaceResponse>(`/api/places/${encodeURIComponent(id)}/google`, signal);
 }

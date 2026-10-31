@@ -2,7 +2,7 @@ import type { Summary } from "@/lib/types";
 import { formatDate, percent, pluralize } from "@/lib/format";
 import { SentimentDot } from "./Badges";
 
-function List({ title, items, tone }: { title: string; items: string[]; tone: "good" | "bad" | "star" }) {
+export function List({ title, items, tone }: { title: string; items: string[]; tone: "good" | "bad" | "star" }) {
   if (!items?.length) return null;
   const color = tone === "good" ? "var(--color-good)" : tone === "bad" ? "var(--color-bad)" : "var(--color-mixed)";
   const mark = tone === "good" ? "+" : tone === "bad" ? "–" : "★";
@@ -29,8 +29,8 @@ export default function SummaryCard({ summary }: { summary: Summary | null }) {
           AI summary
         </h2>
         <p className="mt-2 text-sm muted">
-          A summary is generated after the first review. Send a public reel link or a voice note to the Afefehub
-          WhatsApp number to start this business&apos;s story.
+          A summary is generated after the first Afefehub review. Send a public reel link or a voice note to the Afefehub
+          WhatsApp number to start this business&apos;s story. While you wait, reviews from Google may appear below.
         </p>
       </section>
     );

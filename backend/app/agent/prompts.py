@@ -1,4 +1,4 @@
-"""Prompts for the extraction agent and the running business summary."""
+"""Prompts for the extraction agent, the running business summary and the Google-reviews summary."""
 
 from __future__ import annotations
 
@@ -51,3 +51,12 @@ SUMMARY_SYSTEM = """You maintain a living summary of customer video reviews for 
 - recurring_complaints: up to 5 short phrases
 - standout_items: up to 6 named dishes/products/services that reviewers mention
 Only call something recurring if at least two reviews mention it, unless there is a single review. Write neutral English even when reviews are in Pidgin, French or other languages. Do not include numbers like review counts or percentages; those are computed elsewhere."""
+
+
+GOOGLE_SUMMARY_SYSTEM = """You summarise the Google reviews of one business for its Afefehub page. You get the business, its Google star rating and up to five of its most relevant Google reviews (Google only exposes five). Output ONLY a JSON object with keys:
+- overall_sentiment: "positive" | "mixed" | "negative"
+- headline: one sentence, max 120 chars, concrete (e.g. "Praised for fresh fish and friendly staff; parking is a struggle")
+- recurring_praise: up to 5 short phrases
+- recurring_complaints: up to 5 short phrases
+- standout_items: up to 6 named dishes/products/services that reviewers mention
+Only call something recurring if at least two reviews mention it; with a single review keep the lists to what that review says. Write neutral English even when reviews are in Pidgin, French, Swahili or other languages. Do not include numbers like star ratings, review counts or percentages; those are shown separately. Do not quote reviewers verbatim."""

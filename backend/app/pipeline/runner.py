@@ -28,7 +28,7 @@ from app.models import (
     SubmissionState,
     now_iso,
 )
-from app.pipeline import publish
+from app.pipeline import publish, quota
 from app.pipeline.download import (
     DownloadError,
     download_reel,
@@ -49,15 +49,28 @@ from app.whatsapp import client as wa
 
 log = logging.getLogger(__name__)
 
-HELP = (
-    "👋 Hi, I'm Afefehub. Post a public Instagram reel reviewing a business you visited, then "
-    "send me the link here. I'll watch it, find the business, and publish your review on "
-    "afefehub.com so others can discover it.\n\nNo reel? Just send me a voice note about your "
-    "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
-    "the business name and area clearly."
-)
+
+def help_text() -> str:
+    s = get_settings()
+    return (
+        "👋 Hi, I'm Afefehub. Post a public Instagram reel reviewing a business you visited, then "
+        "send me the link here. I'll watch it, find the business, and publish your review on "
+        "afefehub.com so others can discover it.\n\nNo reel? Just send me a voice note about your "
+        "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
+        f"the business name and area clearly.\n\nYou can publish up to {s.weekly_review_limit} "
+        f"reviews a week, and every published review earns {s.points_per_review} points. Text "
+        "*points* anytime to see your total."
+    )
+
+
 CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
+)
+POINTS_WORDS = re.compile(r"^\s*(my\s+)?(points|balance|score)\s*[?!.]*\s*$", re.I)
+LIMIT_MSG = (
+    "You've published {limit} reviews this week, which is the most Afefehub takes from one "
+    "person in 7 days 🙏 Your next slot opens {when}. Come back then with your next reel or "
+    "voice note!"
 )
 PAUSED_MSG = (
     "Saved your reel ✅ Our review engine is paused for maintenance right now, so I'll "
@@ -88,6 +101,16 @@ def _conversation(phone: str, display_name: str | None) -> Conversation:
     if not conv.profile_country:
         conv.profile_country = country_from_phone(phone)
     return conv
+
+
+def _refuse_if_over_limit(phone: str) -> bool:
+    """True (after telling the reviewer) when they have no review slots left this week."""
+    q = quota.weekly_quota(phone)
+    if not q.exhausted:
+        return False
+    when = quota.humanize_until(q.next_open_at) if q.next_open_at else "soon"
+    wa.send_text(phone, LIMIT_MSG.format(limit=q.limit, when=when))
+    return True
 
 
 def _active(conv: Conversation) -> Submission | None:
@@ -133,6 +156,8 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             else:
                 wa.send_text(phone, "I'm already working on that reel, give me a moment.")
             return
+        if _refuse_if_over_limit(phone):
+            return
         if active:
             _set_state(active, SubmissionState.ABANDONED, "replaced by a new reel")
             wa.send_text(phone, "Okay, dropping the previous review and starting on this new reel.")
@@ -144,6 +169,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         dynamo.put_conversation(conv)
         wa.send_text(phone, "Got it! Downloading your reel and watching it now… 🎬")
         _run_pipeline(sub, conv)
+        return
+
+    # 1b. "points": balance and slots, answered even mid-review so it never burns a clarification
+    if mtype == "text" and POINTS_WORDS.match(text):
+        q = quota.weekly_quota(phone)
+        body = f"⭐ You have {dynamo.get_points(phone)} points.\n\n{quota.slots_line(q)}"
+        if active and active.pending_question:
+            body += "\n\nYour current review is still waiting for your reply 🙂"
+        wa.send_text(phone, body)
         return
 
     # 2. a video file while we're waiting for one
@@ -178,6 +212,8 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             return
         else:
             # no active submission, a reel stuck waiting for a file, or a stale stage
+            if _refuse_if_over_limit(phone):
+                return
             if active:
                 _set_state(active, SubmissionState.ABANDONED, "replaced by a voice note")
                 wa.send_text(phone, "Okay, taking your voice note as the review instead.")
@@ -239,7 +275,7 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             return
 
     # 5. anything else
-    wa.send_text(phone, HELP)
+    wa.send_text(phone, help_text())
 
 
 def _as_logged(text: str, spoken: bool) -> str:

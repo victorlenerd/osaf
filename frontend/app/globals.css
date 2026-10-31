@@ -100,6 +100,8 @@ body {
 .elev { background: var(--bg-elev); }
 
 .instagram-media { margin: 0 auto !important; max-width: 540px !important; min-width: 0 !important; width: 100% !important; }
+/* embed.js swaps the blockquote for an absolutely positioned iframe; keep it inside the card and borderless while empty */
+iframe.instagram-media { border: 0 !important; max-width: 100% !important; }
 
 :focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
 

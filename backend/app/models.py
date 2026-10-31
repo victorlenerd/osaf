@@ -183,6 +183,7 @@ class PlaceCandidate(BaseModel):
     country: str | None = None
     city: str | None = None
     primary_type: str | None = None
+    business_status: str | None = None  # OPERATIONAL | CLOSED_TEMPORARILY | CLOSED_PERMANENTLY
 
 
 SubmissionKind = Literal["reel", "voice"]
@@ -241,6 +242,53 @@ class BusinessSummary(BaseModel):
     last_review_at: str | None = None
     last_updated: str = Field(default_factory=now_iso)
     model_version: str = "muse-spark-1.3"
+
+
+# ------------------------------------------------------------ Google reviews (on demand)
+class GoogleReview(BaseModel):
+    """One Google review as returned by Place Details. Never persisted (Google ToS)."""
+
+    author_name: str = ""
+    author_uri: str | None = None
+    author_photo_uri: str | None = None
+    rating: int | None = None
+    text: str = ""  # verbatim; empty for rating-only reviews
+    language: str | None = None
+    relative_time: str = ""
+    publish_time: str | None = None
+    google_maps_uri: str | None = None
+
+
+class GooglePlaceDetails(BaseModel):
+    place_id: str
+    name: str
+    formatted_address: str = ""
+    city: str | None = None
+    country: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    primary_type: str | None = None
+    rating: float | None = None
+    user_rating_count: int = 0
+    google_maps_uri: str | None = None
+    business_status: str | None = None
+    reviews: list[GoogleReview] = Field(default_factory=list)
+
+
+class GoogleReviewSummary(BaseModel):
+    """AI summary of a place's Google reviews; cached in Dynamo under GPLACE#<id> with a TTL."""
+
+    overall_sentiment: Sentiment = "mixed"
+    headline: str = ""
+    recurring_praise: list[str] = Field(default_factory=list)
+    recurring_complaints: list[str] = Field(default_factory=list)
+    standout_items: list[str] = Field(default_factory=list)
+    rating: float | None = None
+    user_rating_count: int = 0
+    reviews_considered: int = 0
+    generated_at: str = Field(default_factory=now_iso)
+    model_version: str = "muse-spark-1.3"
+    expires_at: int | None = None  # Dynamo TTL attribute; set before put
 
 
 class Business(BaseModel):

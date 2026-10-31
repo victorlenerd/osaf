@@ -84,6 +84,8 @@ class FakeStore:
     def __init__(self):
         self.convs: dict[str, Conversation] = {}
         self.subs: dict[str, Submission] = {}
+        self.reviews: list[Review] = []
+        self.points: dict[str, int] = {}
 
     def get_conversation(self, phone):
         return self.convs.get(phone)
@@ -97,6 +99,43 @@ class FakeStore:
     def put_submission(self, s):
         self.subs[s.submission_id] = s
 
+    def list_reviews_by_reviewer_since(self, reviewer_hash, since_iso, limit=50):
+        hits = [
+            r
+            for r in self.reviews
+            if r.reviewer_phone_hash == reviewer_hash and r.created_at >= since_iso
+        ]
+        return sorted(hits, key=lambda r: r.created_at)[:limit]
+
+    def add_points(self, phone, n):
+        self.points[phone] = self.points.get(phone, 0) + n
+        return self.points[phone]
+
+    def get_points(self, phone):
+        return self.points.get(phone, 0)
+
+
+def _published_review(store: FakeStore, phone: str, days_ago: float) -> Review:
+    """Seed a review this phone published `days_ago` days back."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models import PlaceRef, ReviewExtraction
+
+    created = (datetime.now(UTC) - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    r = Review(
+        review_id=f"r{len(store.reviews)}",
+        business_id="x",
+        submission_id=f"s{len(store.reviews)}",
+        reviewer_phone_hash=runner.quota.phone_hash(phone),
+        extraction=ReviewExtraction(
+            business=PlaceRef(place_id="x", name="n", formatted_address="a", country="NG"),
+            business_name_as_said="n",
+        ),
+        created_at=created,
+    )
+    store.reviews.append(r)
+    return r
+
 
 @pytest.fixture
 def world(monkeypatch):
@@ -104,6 +143,7 @@ def world(monkeypatch):
     sent: list[tuple[str, str]] = []
     events: list[str] = []
     monkeypatch.setattr(runner, "dynamo", store)
+    monkeypatch.setattr(runner.quota, "dynamo", store)
     monkeypatch.setattr(runner.wa, "send_text", lambda to, body, **k: sent.append((to, body)))
     monkeypatch.setattr(
         runner,
@@ -231,6 +271,130 @@ def test_paused_submission_waits_for_model_key(world):
         settings.model_api_key = ""
     assert events == ["pipeline:sc"]
     assert store.subs["s1"].state == SubmissionState.DOWNLOADING
+
+
+REEL = "https://www.instagram.com/reel/AbC123/"
+PHONE = "2348012345678"
+
+
+def test_fourth_review_in_window_is_refused(world):
+    store, sent, events = world
+    for days in (1, 2, 3):
+        _published_review(store, PHONE, days)
+    runner.process_inbound(PHONE, _text(REEL), "Ada")
+    assert not events and not store.subs
+    assert "next slot" in sent[0][1] and "in 4 days" in sent[0][1]
+
+
+def test_limit_ignores_reviews_outside_window(world):
+    store, sent, events = world
+    for days in (1, 1, 8):
+        _published_review(store, PHONE, days)
+    runner.process_inbound(PHONE, _text(REEL), "Ada")
+    assert events == ["pipeline:AbC123"]
+
+
+def test_limit_refusal_keeps_active_submission(world):
+    store, sent, events = world
+    for days in (1, 2, 3):
+        _published_review(store, PHONE, days)
+    store.subs["s1"] = Submission(
+        submission_id="s1", phone=PHONE, reel_shortcode="old", state=SubmissionState.CONFIRMING
+    )
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    runner.process_inbound(PHONE, _text(REEL), "Ada")
+    assert store.subs["s1"].state == SubmissionState.CONFIRMING and not events
+    assert len(sent) == 1 and "dropping" not in sent[0][1]
+
+
+def test_voice_note_refused_at_limit(voice):
+    store, sent, events, heard = voice
+    for days in (1, 2, 3):
+        _published_review(store, PHONE, days)
+    runner.process_inbound(PHONE, _audio("m7"), "Ada")
+    assert not events and not store.subs
+    assert "next slot" in sent[0][1]
+
+
+def test_points_command_reports_balance_and_slots(world):
+    store, sent, events = world
+    store.points[PHONE] = 30
+    _published_review(store, PHONE, 1)
+    for word in ("Points?", "my points", "balance", "SCORE"):
+        runner.process_inbound(PHONE, _text(word), "Ada")
+        assert "30 points" in sent[-1][1] and "2 review slots" in sent[-1][1]
+    runner.process_inbound(PHONE, _text("I have points"), "Ada")
+    assert "Afefehub" in sent[-1][1] and not events
+
+
+def test_points_command_does_not_consume_clarification(world):
+    store, sent, events = world
+    store.subs["s1"] = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION,
+        pending_question="Which Yaba?",
+    )
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    runner.process_inbound(PHONE, _text("points"), "Ada")
+    sub = store.subs["s1"]
+    assert sub.qa_log == [] and sub.state == SubmissionState.AWAITING_CLARIFICATION
+    assert not events and "still waiting" in sent[0][1]
+
+
+def test_help_mentions_limit_and_points(world):
+    store, sent, events = world
+    runner.process_inbound(PHONE, _text("hello"), "Ada")
+    assert "3 reviews a week" in sent[0][1] and "10 points" in sent[0][1]
+
+
+def test_quota_math_and_humanize(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from app.pipeline import quota
+
+    store = FakeStore()
+    monkeypatch.setattr(quota, "dynamo", store)
+    now = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
+    for days in (6.5, 2, 0.5):
+        _published_review(store, PHONE, days)
+    oldest = store.reviews[0].created_at
+    q = quota.weekly_quota(PHONE, now=datetime.now(UTC))
+    assert q.used == 3 and q.remaining == 0 and q.exhausted
+    assert q.next_open_at == (quota._parse(oldest) + timedelta(days=7)).strftime(quota.ISO)
+
+    def at(hours: float) -> str:
+        return (now + timedelta(hours=hours)).strftime(quota.ISO)
+
+    assert quota.humanize_until(at(5), now) == "in about 5 hours"
+    assert quota.humanize_until(at(0.2), now) == "in about 1 hour"
+    assert quota.humanize_until(at(24), now) == "tomorrow"
+    assert quota.humanize_until(at(26), now) == "in 2 days"
+    assert quota.slots_line(quota.WeeklyQuota(used=2, limit=3)) == (
+        "You have 1 review slot left this week."
+    )
+
+
+def test_add_points_update_expression(monkeypatch):
+    from decimal import Decimal
+
+    from app.store import dynamo
+
+    calls: list[dict] = []
+
+    class T:
+        def update_item(self, **kw):
+            calls.append(kw)
+            return {"Attributes": {"points": Decimal(40)}}
+
+    monkeypatch.setattr(dynamo, "_table", lambda: T())
+    total = dynamo.add_points("p", 10)
+    assert total == 40 and isinstance(total, int)
+    kw = calls[0]
+    assert kw["ReturnValues"] == "UPDATED_NEW" and kw["Key"]["SK"] == "POINTS"
+    for key in kw["ExpressionAttributeValues"]:
+        assert key in kw["UpdateExpression"]
 
 
 def test_business_upsert_uses_every_expression_value(monkeypatch):
@@ -481,7 +645,13 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
     monkeypatch.setattr(publish, "generate_summary", lambda b, r, p: BusinessSummary())
     monkeypatch.setattr(publish.s3, "put_json", lambda o, k: k)
     monkeypatch.setattr(publish.opensearch, "upsert_business", lambda b, s: None)
-    monkeypatch.setattr(publish.wa, "send_text", lambda *a, **k: None)
+    awarded: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        publish.dynamo, "add_points", lambda phone, n: awarded.append((phone, n)) or 40
+    )
+    monkeypatch.setattr(publish.dynamo, "list_reviews_by_reviewer_since", lambda *a, **k: [])
+    sent: list[str] = []
+    monkeypatch.setattr(publish.wa, "send_text", lambda to, body, **k: sent.append(body))
     ext = ReviewExtraction(
         business=PlaceRef(place_id="x", name="n", formatted_address="a", country="NG"),
         business_name_as_said="n",
@@ -495,6 +665,8 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
     assert review.source == "voice" and review.reel_url is None
     assert review.audio_s3_key == "submissions/v1/voice.m4a"
     assert sub.state == SubmissionState.PUBLISHED
+    assert awarded == [("p", 10)]
+    assert "+10 points" in sent[0] and "you now have 40" in sent[0]
 
 
 def test_review_audio_endpoint(monkeypatch):

@@ -3,49 +3,91 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SearchBox, { type SearchState } from "@/components/SearchBox";
 import ResultCard from "@/components/ResultCard";
+import PlaceCandidateCard from "@/components/PlaceCandidateCard";
 import HowToSubmit from "@/components/HowToSubmit";
 import { SkeletonCard } from "@/components/Skeleton";
-import { searchBusinesses } from "@/lib/api";
-import type { SearchResult } from "@/lib/types";
+import { ApiError, lookupPlaces, searchBusinesses } from "@/lib/api";
+import type { PlaceCandidate, SearchResult } from "@/lib/types";
 
 type Status = "idle" | "loading" | "done" | "error";
+type GoogleStatus = "idle" | "loading" | "done" | "error";
+
+const MIN_GOOGLE_QUERY = 2;
 
 export default function HomePage() {
   const [state, setState] = useState<SearchState>({ q: "", country: "", category: "" });
   const [results, setResults] = useState<SearchResult[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>("idle");
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<PlaceCandidate[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const googleAbortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const run = useCallback(async (s: SearchState) => {
-    abortRef.current?.abort();
-    if (!s.q.trim() && !s.country && !s.category) {
-      setResults([]);
-      setStatus("idle");
-      setError(null);
-      return;
-    }
+  const resetGoogle = useCallback(() => {
+    googleAbortRef.current?.abort();
+    setCandidates([]);
+    setGoogleStatus("idle");
+    setGoogleError(null);
+  }, []);
+
+  // Google Places is only consulted when Afefehub has nothing: explicitly (button) or on Enter/Search.
+  const checkGoogle = useCallback(async (s: SearchState) => {
+    const q = s.q.trim();
+    if (q.length < MIN_GOOGLE_QUERY) return;
+    googleAbortRef.current?.abort();
     const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    setStatus("loading");
-    setError(null);
+    googleAbortRef.current = ctrl;
+    setGoogleStatus("loading");
+    setGoogleError(null);
     try {
-      const res = await searchBusinesses({ q: s.q.trim(), country: s.country, category: s.category }, ctrl.signal);
+      const res = await lookupPlaces({ q, country: s.country }, ctrl.signal);
       if (ctrl.signal.aborted) return;
-      setResults(res.results);
-      setStatus("done");
+      setCandidates(res.candidates);
+      setGoogleStatus("done");
     } catch (e) {
       if (ctrl.signal.aborted) return;
-      setError(e instanceof Error ? e.message : "Something went wrong");
-      setStatus("error");
+      if (e instanceof ApiError && (e.status === 429 || e.status === 503)) setGoogleError("Google lookups are busy right now. Try again in a moment.");
+      else setGoogleError(e instanceof Error ? e.message : "Something went wrong");
+      setGoogleStatus("error");
     }
   }, []);
 
-  // Debounced search on every change; Enter/button searches immediately.
+  const run = useCallback(
+    async (s: SearchState, { allowGoogle }: { allowGoogle: boolean }) => {
+      abortRef.current?.abort();
+      resetGoogle();
+      if (!s.q.trim() && !s.country && !s.category) {
+        setResults([]);
+        setStatus("idle");
+        setError(null);
+        return;
+      }
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      setStatus("loading");
+      setError(null);
+      try {
+        const res = await searchBusinesses({ q: s.q.trim(), country: s.country, category: s.category }, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        setResults(res.results);
+        setStatus("done");
+        if (allowGoogle && res.results.length === 0) void checkGoogle(s);
+      } catch (e) {
+        if (ctrl.signal.aborted) return;
+        setError(e instanceof Error ? e.message : "Something went wrong");
+        setStatus("error");
+      }
+    },
+    [checkGoogle, resetGoogle],
+  );
+
+  // Debounced search on every change (never calls Google); Enter/button searches immediately and may fall through to Google.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => run(state), 350);
+    debounceRef.current = setTimeout(() => run(state, { allowGoogle: false }), 350);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -53,10 +95,14 @@ export default function HomePage() {
 
   const submitNow = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    run(state);
+    run(state, { allowGoogle: true });
   };
 
   const hasQuery = Boolean(state.q.trim() || state.country || state.category);
+  const trimmedQ = state.q.trim();
+  const canCheckGoogle = trimmedQ.length >= MIN_GOOGLE_QUERY;
+  const showEmpty = status === "done" && results.length === 0 && hasQuery;
+  const showingCandidates = showEmpty && googleStatus === "done" && candidates.length > 0;
 
   return (
     <div className="pt-8 sm:pt-14">
@@ -77,7 +123,7 @@ export default function HomePage() {
         <SearchBox value={state} onChange={setState} onSubmit={submitNow} busy={status === "loading"} />
       </div>
 
-      <section className="mt-8 max-w-3xl" aria-live="polite" aria-busy={status === "loading"}>
+      <section className="mt-8 max-w-3xl" aria-live="polite" aria-busy={status === "loading" || googleStatus === "loading"}>
         {status === "loading" && (
           <ul className="grid gap-3">
             <SkeletonCard />
@@ -105,18 +151,50 @@ export default function HomePage() {
             </ul>
           </>
         )}
-        {status === "done" && results.length === 0 && hasQuery && (
+        {showEmpty && (
           <div className="card p-6">
             <p className="font-display text-lg font-semibold">Nothing here yet.</p>
             <p className="mt-1 text-sm muted">
-              No business matches that search. Know a good one? Review it on video or send a voice note and it will show up here.
+              No business on Afefehub matches that search. Know a good one? Review it on video or send a voice note and it will show up here.
             </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => checkGoogle(state)}
+                disabled={!canCheckGoogle || googleStatus === "loading"}
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
+              >
+                {googleStatus === "loading" ? "Checking Google…" : canCheckGoogle ? `Check Google for “${trimmedQ}”` : "Check Google"}
+              </button>
+              {!canCheckGoogle && <span className="text-xs muted">Type a business name to check Google.</span>}
+            </div>
+
+            {googleStatus === "error" && (
+              <p className="mt-3 text-sm" style={{ color: "var(--color-bad)" }}>{googleError}</p>
+            )}
+            {googleStatus === "done" && candidates.length === 0 && (
+              <p className="mt-3 text-sm muted">Google doesn&apos;t know that business either. Check the spelling, or widen the country filter.</p>
+            )}
+          </div>
+        )}
+        {showingCandidates && (
+          <div className="mt-5">
+            <p className="mb-3 text-sm muted">
+              Found on Google · {candidates.length} {candidates.length === 1 ? "place" : "places"}. No Afefehub reviews yet, but you can read their Google reviews.
+            </p>
+            <ul className="grid gap-3">
+              {candidates.map((c) => (
+                <PlaceCandidateCard key={c.place_id} candidate={c} />
+              ))}
+            </ul>
           </div>
         )}
       </section>
 
-      <div className={`max-w-3xl ${status === "done" && results.length > 0 ? "mt-12" : "mt-8"}`}>
-        <HowToSubmit compact={status === "done" && results.length > 0} />
+      <div className={`max-w-3xl ${(status === "done" && results.length > 0) || showingCandidates ? "mt-12" : "mt-8"}`}>
+        <HowToSubmit compact={(status === "done" && results.length > 0) || showingCandidates} />
       </div>
     </div>
   );

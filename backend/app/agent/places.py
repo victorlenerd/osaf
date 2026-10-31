@@ -1,4 +1,5 @@
-"""Google Places API (New) text search — the agent's business-resolution tool."""
+"""Google Places API (New): text search (the agent's business-resolution tool) and Place Details
+(on-demand Google reviews for the public site)."""
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ import httpx
 import phonenumbers
 
 from app.config import get_settings
-from app.models import PlaceCandidate
+from app.models import GooglePlaceDetails, GoogleReview, PlaceCandidate
 
 log = logging.getLogger(__name__)
 
@@ -21,8 +22,28 @@ FIELD_MASK = ",".join(
         "places.primaryType",
         "places.types",
         "places.addressComponents",
+        "places.businessStatus",
     ]
 )
+
+# Place Details masks are unprefixed. `reviews` is the Enterprise + Atmosphere SKU: call it only
+# from the on-demand endpoint, never from the agent.
+DETAILS_FIELD_MASK = ",".join(
+    [
+        "id",
+        "displayName",
+        "formattedAddress",
+        "location",
+        "addressComponents",
+        "primaryType",
+        "rating",
+        "userRatingCount",
+        "googleMapsUri",
+        "businessStatus",
+        "reviews",
+    ]
+)
+PLACES_BASE = "https://places.googleapis.com/v1"
 
 
 def country_from_phone(phone: str) -> str | None:
@@ -33,9 +54,11 @@ def country_from_phone(phone: str) -> str | None:
         return None
 
 
-def _component(place: dict, kind: str) -> str | None:
+def _component(place: dict, kind: str, *, short: bool = False) -> str | None:
     for c in place.get("addressComponents") or []:
         if kind in (c.get("types") or []):
+            if short:
+                return c.get("shortText") or c.get("longText")
             return c.get("longText") or c.get("shortText")
     return None
 
@@ -108,6 +131,58 @@ def search_places(
                 country=_component(p, "country"),
                 city=city_of(p),
                 primary_type=p.get("primaryType"),
+                business_status=p.get("businessStatus"),
             )
         )
     return out
+
+
+def _review(r: dict) -> GoogleReview:
+    text = r.get("text") or r.get("originalText") or {}
+    author = r.get("authorAttribution") or {}
+    return GoogleReview(
+        author_name=author.get("displayName") or "",
+        author_uri=author.get("uri"),
+        author_photo_uri=author.get("photoUri"),
+        rating=r.get("rating"),
+        text=text.get("text") or "",
+        language=text.get("languageCode"),
+        relative_time=r.get("relativePublishTimeDescription") or "",
+        publish_time=r.get("publishTime"),
+        google_maps_uri=r.get("googleMapsUri"),
+    )
+
+
+def get_place_details(place_id: str) -> GooglePlaceDetails | None:
+    """Live Place Details incl. up to 5 reviews. None when Google does not know the id."""
+    key = get_settings().google_places_api_key
+    if not key:
+        raise RuntimeError("GOOGLE_PLACES_API_KEY not configured")
+    r = httpx.get(
+        f"{PLACES_BASE}/places/{place_id}",
+        headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": DETAILS_FIELD_MASK},
+        params={"languageCode": "en"},
+        timeout=20,
+    )
+    if r.status_code in (400, 404):  # INVALID_ARGUMENT (malformed id) or NOT_FOUND
+        log.info("place details %s -> %s", place_id, r.status_code)
+        return None
+    if r.status_code >= 400:
+        raise RuntimeError(f"Places error {r.status_code}: {r.text[:300]}")
+    p = r.json()
+    loc = p.get("location") or {}
+    return GooglePlaceDetails(
+        place_id=place_id,  # keep the requested id: Google may hand back a refreshed one
+        name=(p.get("displayName") or {}).get("text") or "",
+        formatted_address=p.get("formattedAddress") or "",
+        city=city_of(p),
+        country=_component(p, "country", short=True),  # alpha-2, as the site expects
+        lat=loc.get("latitude"),
+        lng=loc.get("longitude"),
+        primary_type=p.get("primaryType"),
+        rating=p.get("rating"),
+        user_rating_count=int(p.get("userRatingCount") or 0),
+        google_maps_uri=p.get("googleMapsUri"),
+        business_status=p.get("businessStatus"),
+        reviews=[_review(x) for x in p.get("reviews") or []],
+    )

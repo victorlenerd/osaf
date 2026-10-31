@@ -53,7 +53,7 @@ export default function InstagramEmbed({ url }: { url: string }) {
   }, [url]);
 
   return (
-    <div className="w-full">
+    <div className="relative w-full overflow-hidden">
       <blockquote
         className="instagram-media"
         data-instgrm-permalink={url}

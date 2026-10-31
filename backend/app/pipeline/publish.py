@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 
 from ulid import ULID
@@ -10,14 +9,13 @@ from ulid import ULID
 from app.agent.summary import generate_summary
 from app.config import get_settings
 from app.models import Conversation, Review, Submission, SubmissionState, now_iso
+from app.pipeline.quota import phone_hash, slots_line, weekly_quota
 from app.store import dynamo, opensearch, s3
 from app.whatsapp import client as wa
 
+__all__ = ["business_url", "phone_hash", "publish_submission"]
+
 log = logging.getLogger(__name__)
-
-
-def phone_hash(phone: str) -> str:
-    return hashlib.sha256((get_settings().phone_hash_salt + phone).encode()).hexdigest()[:24]
 
 
 def business_url(business_id: str) -> str:
@@ -75,6 +73,11 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     sub.state_updated_at = now_iso()
     dynamo.put_submission(sub)
 
+    # Reward only once the PUBLISHED marker is durable: a crash before it reruns the pipeline.
+    points = get_settings().points_per_review
+    total = dynamo.add_points(sub.phone, points)
+    q = weekly_quota(sub.phone)  # the review just written already counts against this week
+
     conv.active_submission_id = None
     if ext.business.city:
         conv.profile_city = ext.business.city
@@ -86,7 +89,8 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         sub.phone,
         f"Published! 🎉 Your review of {business.name} is live:\n"
         f"{business_url(business.business_id)}\n\n"
-        f"That's review #{business.review_count} for this business. Send another reel or "
-        "voice note anytime.",
+        f"That's review #{business.review_count} for this business. ⭐ +{points} points, "
+        f"you now have {total}.\n\n{slots_line(q)} Send another reel or voice note anytime; "
+        "text *points* to check your balance.",
     )
     return review

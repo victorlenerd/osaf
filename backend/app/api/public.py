@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
+from collections.abc import Callable
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
+from app.agent.places import get_place_details, search_places
+from app.agent.summary import summarize_google_reviews
 from app.config import get_settings
 from app.models import CATEGORIES, Review
 from app.store import dynamo, opensearch, s3
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["public"])
 
 
@@ -92,3 +100,83 @@ def review_audio(review_id: str):
     if not r or r.status != "published" or not r.audio_s3_key:
         raise HTTPException(status_code=404, detail="no audio for this review")
     return RedirectResponse(s3.presigned_url(r.audio_s3_key, expires=3600), status_code=302)
+
+
+# ------------------------------------------------------------ Google reviews on demand
+GOOGLE_ATTRIBUTION = "Reviews from Google"
+
+
+class _TokenBucket:
+    """Per-process burst guard on paid Google calls.
+
+    A daily quota set in Google Cloud console is the real cap."""
+
+    def __init__(self, rate_per_minute: int):
+        self.capacity = float(rate_per_minute)
+        self.tokens = float(rate_per_minute)
+        self.refill_per_s = rate_per_minute / 60.0
+        self.updated = time.monotonic()
+        self.lock = threading.Lock()
+
+    def take(self) -> bool:
+        with self.lock:
+            now = time.monotonic()
+            self.tokens = min(self.capacity, self.tokens + (now - self.updated) * self.refill_per_s)
+            self.updated = now
+            if self.tokens < 1:
+                return False
+            self.tokens -= 1
+            return True
+
+
+google_bucket = _TokenBucket(60)
+
+
+def _google_call[T](fn: Callable[[], T]) -> T:
+    """Run a Places call, mapping its failures to API errors (503 unconfigured, 502 upstream)."""
+    if not google_bucket.take():
+        raise HTTPException(status_code=429, detail="too many Google lookups, try again shortly")
+    try:
+        return fn()
+    except RuntimeError as e:
+        if "not configured" in str(e):
+            raise HTTPException(status_code=503, detail="google lookup unavailable") from e
+        log.warning("google places failed: %s", e)
+        raise HTTPException(status_code=502, detail="google lookup failed") from e
+    except Exception as e:  # noqa: BLE001  (httpx transport errors etc.)
+        log.warning("google places failed: %r", e)
+        raise HTTPException(status_code=502, detail="google lookup failed") from e
+
+
+@router.get("/places/lookup")
+def places_lookup(
+    q: str = Query(min_length=2, max_length=200),
+    country: str | None = Query(default=None, min_length=2, max_length=2),
+    limit: int = Query(default=5, ge=1, le=5),
+):
+    """Verify a business name against Google Places. Used only when Afefehub search is empty."""
+    cands = _google_call(lambda: search_places(q.strip(), country or "", max_results=limit))
+    return {"candidates": [c.model_dump() for c in cands]}
+
+
+@router.get("/places/{place_id}/google")
+def place_google_reviews(place_id: str):
+    """Live Google reviews (max 5, never stored) plus a cached (24 h) AI summary of them."""
+    if place_id.startswith("afefe:") or not place_id.strip():
+        raise HTTPException(status_code=404, detail="not a Google place")
+    place = _google_call(lambda: get_place_details(place_id))
+    if place is None:
+        raise HTTPException(status_code=404, detail="not found")
+
+    textual = sum(1 for r in place.reviews if r.text.strip())
+    summary = dynamo.get_google_summary(place_id)
+    if summary is None or summary.reviews_considered != textual:
+        summary = summarize_google_reviews(place)
+        if summary.reviews_considered and summary.headline:  # only cache LLM-generated text
+            dynamo.put_google_summary(place_id, summary)
+    return {
+        "place": place.model_dump(exclude={"reviews"}),
+        "summary": summary.model_dump(exclude={"expires_at"}),
+        "reviews": [r.model_dump() for r in place.reviews],
+        "attribution": GOOGLE_ATTRIBUTION,
+    }
