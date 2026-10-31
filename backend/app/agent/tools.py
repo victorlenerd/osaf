@@ -188,8 +188,9 @@ REJECT_REVIEW = {
     "function": {
         "name": "reject_review",
         "description": (
-            "Decline the submission because the video is not a business review (no business "
-            "visited, no customer experience described). Calling this ends the submission; the "
+            "Decline the submission because the video or voice note is not a business review "
+            "(no business visited, no customer experience described). Calling this ends the "
+            "submission; the "
             "reviewer is told to record a real review. Do not use it for a review that merely "
             "lacks a detail such as the branch or city: ask_user handles those."
         ),

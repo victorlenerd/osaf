@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import RedirectResponse
 
-from app.models import CATEGORIES
-from app.store import dynamo, opensearch
+from app.config import get_settings
+from app.models import CATEGORIES, Review
+from app.store import dynamo, opensearch, s3
 
 router = APIRouter(prefix="/api", tags=["public"])
 
@@ -60,8 +62,10 @@ def business(business_id: str):
             {
                 "review_id": r.review_id,
                 "created_at": r.created_at,
+                "source": r.source,
                 "reel_url": r.reel_url,
                 "reel_shortcode": r.reel_shortcode,
+                "audio_url": audio_url(r),
                 "reviewer_display_name": r.reviewer_display_name,
                 "extraction": r.extraction.model_dump(
                     exclude={"business", "confidence"}, exclude_none=True
@@ -71,3 +75,20 @@ def business(business_id: str):
             if r.status == "published"
         ],
     }
+
+
+def audio_url(r: Review) -> str | None:
+    """Stable URL for a voice review's audio; the endpoint below redirects to a fresh S3 URL."""
+    if r.source != "voice" or not r.audio_s3_key:
+        return None
+    base = get_settings().public_api_url.rstrip("/")
+    return f"{base}/api/review/{r.review_id}/audio"
+
+
+@router.get("/review/{review_id}/audio", status_code=302)
+def review_audio(review_id: str):
+    """Redirect to a short-lived S3 URL; the browser streams (and range-seeks) from S3 directly."""
+    r = dynamo.get_review(review_id)
+    if not r or r.status != "published" or not r.audio_s3_key:
+        raise HTTPException(status_code=404, detail="no audio for this review")
+    return RedirectResponse(s3.presigned_url(r.audio_s3_key, expires=3600), status_code=302)

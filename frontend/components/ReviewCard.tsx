@@ -3,6 +3,7 @@ import { formatDate } from "@/lib/format";
 import { languageName } from "@/lib/constants";
 import { RecommendBadge, SentimentDot, Tag } from "./Badges";
 import InstagramEmbed from "./InstagramEmbed";
+import VoicePlayer from "./VoicePlayer";
 
 function Bullets({ title, items, tone }: { title: string; items: string[]; tone: "good" | "bad" }) {
   if (!items?.length) return null;
@@ -25,18 +26,22 @@ function Bullets({ title, items, tone }: { title: string; items: string[]; tone:
 export default function ReviewCard({ review }: { review: Review }) {
   const x = review.extraction;
   const visitBits = [x.visit?.when_text, x.visit?.where_text].filter(Boolean) as string[];
+  const isVoice = review.source === "voice";
+  const reviewerKind = isVoice ? "Voice reviewer" : "Instagram reviewer";
+  const anonymous = isVoice ? "a voice reviewer" : "an Instagram reviewer";
   return (
-    <article className="card overflow-hidden" aria-label={`Review by ${review.reviewer_display_name ?? "an Instagram reviewer"}`}>
+    <article className="card overflow-hidden" aria-label={`Review by ${review.reviewer_display_name ?? anonymous}`}>
       <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_320px]">
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <RecommendBadge value={x.recommend} />
             <SentimentDot sentiment={x.overall_sentiment} withLabel />
             <Tag>{languageName(x.language)}</Tag>
+            {isVoice && <Tag>🎤 Voice review</Tag>}
           </div>
           <p className="font-display mt-3 text-lg font-semibold leading-snug">&ldquo;{x.one_line_summary}&rdquo;</p>
           <p className="mt-2 text-sm muted">
-            {review.reviewer_display_name ?? "Instagram reviewer"} · {formatDate(review.created_at)}
+            {review.reviewer_display_name ?? reviewerKind} · {formatDate(review.created_at)}
             {visitBits.length > 0 && (
               <>
                 {" "}· visited {visitBits.join(", ")}
@@ -58,15 +63,21 @@ export default function ReviewCard({ review }: { review: Review }) {
             </div>
           )}
 
-          <a href={review.reel_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-sm font-medium underline-offset-2 hover:underline" style={{ color: "var(--brand)" }}>
-            Open on Instagram
-            <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 17 17 7M8 7h9v9" />
-            </svg>
-          </a>
+          {!isVoice && review.reel_url && (
+            <a href={review.reel_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1 text-sm font-medium underline-offset-2 hover:underline" style={{ color: "var(--brand)" }}>
+              Open on Instagram
+              <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 17 17 7M8 7h9v9" />
+              </svg>
+            </a>
+          )}
         </div>
         <div className="border-t line p-3 md:border-l md:border-t-0" style={{ background: "color-mix(in oklab, var(--line) 35%, transparent)" }}>
-          <InstagramEmbed url={review.reel_url} />
+          {isVoice ? (
+            <VoicePlayer src={review.audio_url} reviewer={review.reviewer_display_name} />
+          ) : (
+            review.reel_url && <InstagramEmbed url={review.reel_url} />
+          )}
         </div>
       </div>
     </article>

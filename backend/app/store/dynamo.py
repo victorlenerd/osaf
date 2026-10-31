@@ -7,6 +7,7 @@ PK / SK layout
   REEL#<shortcode>    META                       one review per reel
   BIZ#<id>            META                       Business     GSI1: CAT#<category>/BIZ#<updated>
   BIZ#<id>            REV#<created_at>#<rid>     Review       GSI1: REVIEWER#<hash>/REV#<created>
+  REVIEW#<rid>        META                       pointer {business_id, sk} for lookup by id
   BIZ#<id>            SUMMARY                    BusinessSummary
 """
 
@@ -215,15 +216,28 @@ def list_businesses_by_category(category: str, limit: int = 50) -> list[Business
 
 # ----------------------------------------------------------------------- reviews
 def put_review(r: Review) -> None:
+    sk = f"REV#{r.created_at}#{r.review_id}"
     _table().put_item(
         Item={
             "PK": f"BIZ#{r.business_id}",
-            "SK": f"REV#{r.created_at}#{r.review_id}",
+            "SK": sk,
             "GSI1PK": f"REVIEWER#{r.reviewer_phone_hash}",
             "GSI1SK": f"REV#{r.created_at}",
             **_to_item(r),
         }
     )
+    # Reviews are keyed by business; this pointer lets the audio endpoint find one by id.
+    _table().put_item(
+        Item={"PK": f"REVIEW#{r.review_id}", "SK": "META", "business_id": r.business_id, "sk": sk}
+    )
+
+
+def get_review(review_id: str) -> Review | None:
+    ptr = _table().get_item(Key={"PK": f"REVIEW#{review_id}", "SK": "META"}).get("Item")
+    if not ptr:
+        return None
+    r = _table().get_item(Key={"PK": f"BIZ#{ptr['business_id']}", "SK": ptr["sk"]})
+    return Review(**_from_item(r["Item"])) if "Item" in r else None
 
 
 def list_reviews(business_id: str, limit: int = 100) -> list[Review]:

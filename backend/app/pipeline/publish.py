@@ -28,7 +28,7 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     ext = sub.extraction
     assert ext is not None, "cannot publish without an extraction"
     review_id = str(ULID())
-    if not dynamo.claim_reel(sub.reel_shortcode, review_id):
+    if sub.kind == "reel" and not dynamo.claim_reel(sub.reel_shortcode or "", review_id):
         sub.state = SubmissionState.REJECTED
         sub.error = "reel already reviewed"
         sub.state_updated_at = now_iso()
@@ -44,11 +44,13 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         submission_id=sub.submission_id,
         reviewer_phone_hash=phone_hash(sub.phone),
         reviewer_display_name=conv.display_name,
+        source=sub.kind,
         reel_url=sub.reel_url,
         reel_shortcode=sub.reel_shortcode,
         extraction=ext,
         transcript_s3_key=sub.s3_transcript_key,
         video_s3_key=sub.s3_video_key,
+        audio_s3_key=sub.s3_voice_key,
         face_check=sub.face_check,
     )
     dynamo.put_review(review)
@@ -84,6 +86,7 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         sub.phone,
         f"Published! 🎉 Your review of {business.name} is live:\n"
         f"{business_url(business.business_id)}\n\n"
-        f"That's review #{business.review_count} for this business. Send another reel anytime.",
+        f"That's review #{business.review_count} for this business. Send another reel or "
+        "voice note anytime.",
     )
     return review

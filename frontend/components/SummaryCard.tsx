@@ -29,8 +29,8 @@ export default function SummaryCard({ summary }: { summary: Summary | null }) {
           AI summary
         </h2>
         <p className="mt-2 text-sm muted">
-          A summary is generated after the first video review. Send a public reel link to the Afefehub WhatsApp number to
-          start this business&apos;s story.
+          A summary is generated after the first review. Send a public reel link or a voice note to the Afefehub
+          WhatsApp number to start this business&apos;s story.
         </p>
       </section>
     );

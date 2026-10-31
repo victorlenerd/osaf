@@ -111,3 +111,48 @@ body {
 .legal-section strong { font-weight: 700; }
 .legal-section a { text-decoration: underline; text-underline-offset: 2px; }
 .legal-section h3 { font-weight: 700; margin-top: 1rem; }
+
+/* Voice review seek bar: filled track up to --voice-pct, round thumb in the accent colour */
+.voice-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+  --voice-pct: 0%;
+}
+.voice-seek:disabled { cursor: default; opacity: 0.6; }
+.voice-seek::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent) var(--voice-pct), var(--line) var(--voice-pct));
+}
+.voice-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--bg-elev);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.voice-seek::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.voice-seek::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.voice-seek::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--bg-elev);
+  box-shadow: 0 0 0 1px var(--line);
+}

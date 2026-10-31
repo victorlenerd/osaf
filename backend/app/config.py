@@ -35,12 +35,14 @@ class Settings(BaseSettings):
     opensearch_endpoint: str = ""  # host only, e.g. search-xxx.us-east-1.es.amazonaws.com
     opensearch_index: str = "businesses"
     public_site_url: str = "https://afefehub.com"
+    public_api_url: str = "https://api.afefehub.com"  # absolute base for URLs the API hands out
 
     # pipeline tuning
     max_clarification_rounds: int = 3
     face_coverage_threshold: float = 0.5
     dominant_speaker_threshold: float = 0.6
     stale_stage_seconds: int = 600
+    max_voice_note_seconds: int = 600  # Muse Voice Transcribe file limit is 10 minutes
     phone_hash_salt: str = "afefehub"
     work_dir: str = "/tmp/afefehub"
 

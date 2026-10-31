@@ -4,7 +4,7 @@ import { REPO_URL } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "About",
-  description: "What Afefehub is and how video reviews are verified with Meta's SAM 3.1, Muse Voice Transcribe and Muse Spark.",
+  description: "What Afefehub is and how video and voice reviews are verified with Meta's SAM 3.1, Muse Voice Transcribe and Muse Spark.",
 };
 
 const STEPS = [
@@ -29,6 +29,11 @@ const STEPS = [
     model: "Muse Spark 1.3",
   },
   {
+    title: "Voice notes",
+    body: "Did not film? Send a WhatsApp voice note instead. It is transcribed with Muse Voice Transcribe and goes through the same extraction, and the recording is playable on the business page. There is no face check for voice notes, so they are badged \"Voice review\" so readers can tell the two apart.",
+    model: "WhatsApp + Muse Voice Transcribe",
+  },
+  {
     title: "A living summary",
     body: "Each new review is added to that business's history, and the AI summary on its page is regenerated so it always reflects every review to date.",
     model: "Muse Spark 1.3",
@@ -43,9 +48,10 @@ export default function AboutPage() {
         Reviews you can look in the eye.
       </h1>
       <p className="mt-5 text-lg leading-relaxed muted">
-        Afefehub is a place to discover businesses across Africa through authentic video reviews. Instead of anonymous
-        star ratings, every review is a public Instagram reel of a real person talking about a real visit. We turn those
-        reels into searchable, structured reviews and a running AI summary for each business.
+        Afefehub is a place to discover businesses across Africa through authentic reviews in real people&apos;s own
+        voices. Instead of anonymous star ratings, every review is a public Instagram reel of a real person talking about
+        a real visit, or a voice note they sent us on WhatsApp. We turn those reels and voice notes into searchable,
+        structured reviews and a running AI summary for each business.
       </p>
 
       <section className="mt-12" aria-labelledby="how-title">
@@ -79,9 +85,10 @@ export default function AboutPage() {
         </h2>
         <p className="mt-3 leading-relaxed muted">
           Post your reel publicly, then send the link to the Afefehub WhatsApp number shown on the{" "}
-          <Link href="/" className="underline" style={{ color: "var(--accent-ink)" }}>home page</Link>. There is no app to
-          install and no account to create. Within a few minutes the review appears on the business page with your reel
-          embedded.
+          <Link href="/" className="underline" style={{ color: "var(--accent-ink)" }}>home page</Link>. If you did not
+          film, just send a voice note to the same number instead. There is no app to install and no account to create.
+          Within a few minutes the review appears on the business page with your reel embedded or your voice note
+          playable.
         </p>
       </section>
 

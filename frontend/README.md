@@ -1,6 +1,6 @@
 # Afefehub web app
 
-Public site for Afefehub: search businesses across Africa and read their video reviews.
+Public site for Afefehub: search businesses across Africa and read their video and voice reviews.
 Next.js 15 (app router, static export), TypeScript, Tailwind CSS 4. All data is fetched
 client-side from the Afefehub API; nothing is fetched at build time.
 
@@ -36,7 +36,9 @@ pnpm dev
 
 Open http://localhost:3000. Try searching "jollof", "barber" or "coffee". The mock lives in
 `mock/server.mjs` and `mock/fixtures.mjs`; it serves `GET /api/search` and `GET /api/business/{id}`
-with CORS enabled and a small artificial delay so loading states are visible.
+with CORS enabled and a small artificial delay so loading states are visible. It also serves
+`GET /api/review/{id}/audio` for the one voice-note fixture (a bundled 6-second tone,
+`mock/sample-voice.m4a`), with Range support like the real presigned S3 file.
 
 ## Lint and build
 

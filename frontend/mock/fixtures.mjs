@@ -2,12 +2,30 @@
 
 const now = "2026-10-28T14:20:00Z";
 
+const MOCK_BASE = `http://localhost:${process.env.PORT || 8000}`;
+
 function review(id, shortcode, name, extraction, createdAt) {
   return {
     review_id: id,
     created_at: createdAt,
+    source: "reel",
     reel_url: `https://www.instagram.com/reel/${shortcode}/`,
     reel_shortcode: shortcode,
+    audio_url: null,
+    reviewer_display_name: name,
+    extraction,
+  };
+}
+
+// A WhatsApp voice-note review: no reel, no face check, audio streamed from the API.
+function voiceReview(id, name, extraction, createdAt) {
+  return {
+    review_id: id,
+    created_at: createdAt,
+    source: "voice",
+    reel_url: null,
+    reel_shortcode: null,
+    audio_url: `${MOCK_BASE}/api/review/${id}/audio`,
     reviewer_display_name: name,
     extraction,
   };
@@ -22,14 +40,14 @@ export const businesses = [
       city: "Lagos",
       country: "NG",
       category: "restaurant",
-      review_count: 3,
-      recommend_rate: 0.67,
+      review_count: 4,
+      recommend_rate: 0.75,
       overall_sentiment: "positive",
       summary_headline: "Generous jollof portions and warm service, but expect a wait at lunch.",
       location: { lat: 6.5095, lng: 3.3711 },
       source: "google",
       google_primary_type: "nigerian_restaurant",
-      recommend_counts: { yes: 2, no: 0, maybe: 1 },
+      recommend_counts: { yes: 3, no: 0, maybe: 1 },
       keywords: ["jollof", "pepper soup", "lunch", "affordable", "yaba"],
       created_at: "2026-10-02T09:00:00Z",
       updated_at: now,
@@ -44,13 +62,30 @@ export const businesses = [
       ],
       recurring_complaints: ["Queue at lunchtime can be 20+ minutes", "Limited seating indoors"],
       standout_items: ["Smoky jollof rice", "Catfish pepper soup", "Chilled zobo"],
-      recommendation_rate: 0.67,
-      review_count: 3,
+      recommendation_rate: 0.75,
+      review_count: 4,
       last_review_at: now,
       last_updated: now,
       model_version: "muse-spark-1.3",
     },
     reviews: [
+      voiceReview(
+        "rev_004",
+        "Amaka",
+        {
+          business_name_as_said: "Mama Put Kitchen",
+          visit: { when_text: "Tuesday lunch", when_iso: "2026-10-28", where_text: "Yaba" },
+          good: ["Fried rice was fresh and hot", "Staff packed my takeaway fast"],
+          improve: ["No change for a 5,000 naira note, had to wait"],
+          recommend: "yes",
+          category: "restaurant",
+          keywords: ["fried rice", "takeaway", "yaba"],
+          overall_sentiment: "positive",
+          language: "en",
+          one_line_summary: "Fresh fried rice and quick takeaway, just bring smaller notes.",
+        },
+        now,
+      ),
       review(
         "rev_001",
         "C7xQ2mPxyz1",

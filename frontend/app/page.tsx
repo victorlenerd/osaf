@@ -62,14 +62,14 @@ export default function HomePage() {
     <div className="pt-8 sm:pt-14">
       <section className="max-w-3xl">
         <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent-ink)" }}>
-          Video reviews · Africa
+          Video &amp; voice reviews · Africa
         </p>
         <h1 className="font-display mt-3 text-4xl font-semibold leading-[1.05] tracking-tight sm:text-6xl" style={{ color: "var(--brand)" }}>
-          Real reviews from real faces.
+          Real reviews from real voices.
         </h1>
         <p className="mt-4 max-w-xl text-base leading-relaxed muted sm:text-lg">
-          Find businesses across Africa reviewed on video. Every review is a public Instagram reel by a real
-          person, checked and summarised by AI.
+          Find businesses across Africa reviewed by real people. Every review is a public Instagram reel by a
+          real person, or a voice note in their own words, checked and summarised by AI.
         </p>
       </section>
 
@@ -109,7 +109,7 @@ export default function HomePage() {
           <div className="card p-6">
             <p className="font-display text-lg font-semibold">Nothing here yet.</p>
             <p className="mt-1 text-sm muted">
-              No business matches that search. Know a good one? Review it on video and it will show up here.
+              No business matches that search. Know a good one? Review it on video or send a voice note and it will show up here.
             </p>
           </div>
         )}

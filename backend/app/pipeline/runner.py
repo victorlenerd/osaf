@@ -38,6 +38,12 @@ from app.pipeline.download import (
 )
 from app.pipeline.facecheck import run_face_check
 from app.pipeline.transcribe import transcribe_audio
+from app.pipeline.voice import (
+    VoiceNoteError,
+    fetch_voice_note,
+    transcode_for_playback,
+    transcribe_voice_note,
+)
 from app.store import dynamo, s3
 from app.whatsapp import client as wa
 
@@ -46,8 +52,9 @@ log = logging.getLogger(__name__)
 HELP = (
     "👋 Hi, I'm Afefehub. Post a public Instagram reel reviewing a business you visited, then "
     "send me the link here. I'll watch it, find the business, and publish your review on "
-    "afefehub.com so others can discover it.\n\nTip: say the business name and area clearly in "
-    "the video."
+    "afefehub.com so others can discover it.\n\nNo reel? Just send me a voice note about your "
+    "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
+    "the business name and area clearly."
 )
 CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
@@ -112,6 +119,8 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
     conv = _conversation(phone, display_name)
     mtype = msg.get("type")
     text = (msg.get("text") or {}).get("body", "") if mtype == "text" else ""
+    voice_id = (msg.get("audio") or {}).get("id") if mtype == "audio" else None
+    spoken = False
     active = _active(conv)
 
     # 1. a new reel link always starts (or restarts) a submission
@@ -152,10 +161,33 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         _run_pipeline(active, conv, skip_download=True)
         return
 
-    # 3. answers while a submission waits on the user
+    # 3. a voice note: an answer while we wait on the reviewer, otherwise a voice-only review
+    if voice_id:
+        if active and active.state in (
+            SubmissionState.AWAITING_CLARIFICATION,
+            SubmissionState.CONFIRMING,
+        ):
+            heard = _hear_reply(active, voice_id)
+            if heard is None:
+                return
+            text, spoken = heard, True
+        elif active and active.state == SubmissionState.PAUSED:
+            text = "(voice note)"  # handled by the PAUSED branch below
+        elif active and active.state in TRANSIENT_STATES and not _is_stale(active):
+            wa.send_text(phone, "Still working on your last review, one moment… ⏳")
+            return
+        else:
+            # no active submission, a reel stuck waiting for a file, or a stale stage
+            if active:
+                _set_state(active, SubmissionState.ABANDONED, "replaced by a voice note")
+                wa.send_text(phone, "Okay, taking your voice note as the review instead.")
+            _start_voice_review(conv, voice_id)
+            return
+
+    # 4. answers while a submission waits on the user
     if active and text:
         if active.state == SubmissionState.AWAITING_CLARIFICATION:
-            active.qa_log.append(QA(q=active.pending_question or "", a=text))
+            active.qa_log.append(QA(q=active.pending_question or "", a=_as_logged(text, spoken)))
             active.pending_question = None
             _set_state(active, SubmissionState.EXTRACTING, "clarification received")
             _extract_and_route(active, conv, latest_answer=text)
@@ -169,21 +201,30 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
                 wa.send_text(
                     phone,
                     "I can't take more corrections on this one. Reply OK to publish as-is, "
-                    "or send a new reel.",
+                    "or send a new reel or voice note.",
                 )
                 return
-            active.qa_log.append(QA(q="(confirmation) " + (active.pending_question or ""), a=text))
+            active.qa_log.append(
+                QA(
+                    q="(confirmation) " + (active.pending_question or ""),
+                    a=_as_logged(text, spoken),
+                )
+            )
             active.pending_question = None
             active.clarification_rounds += 1
             _set_state(active, SubmissionState.EXTRACTING, "correction received")
             _extract_and_route(active, conv, latest_answer="CORRECTION from reviewer: " + text)
             return
         if active.state == SubmissionState.AWAITING_VIDEO:
-            wa.send_text(phone, "Please send the video file itself (or a public reel link).")
+            wa.send_text(
+                phone,
+                "Please send the video file itself or a public reel link. Or, if you'd rather, "
+                "send me a voice note reviewing the place and I'll use that instead.",
+            )
             return
         if active.state == SubmissionState.PAUSED:
             if _models_ready():
-                wa.send_text(phone, "We're back! Picking up your reel where I left off… 🎬")
+                wa.send_text(phone, "We're back! Picking up your review where I left off… 🎬")
                 _set_state(active, SubmissionState.DOWNLOADING, "resumed after pause")
                 _run_pipeline(active, conv, skip_download=True)
             else:
@@ -194,11 +235,60 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
                 wa.send_text(phone, "That one got stuck, resuming now…")
                 _run_pipeline(active, conv, skip_download=active.s3_video_key is not None)
             else:
-                wa.send_text(phone, "Still working on your last reel, one moment… ⏳")
+                wa.send_text(phone, "Still working on your last review, one moment… ⏳")
             return
 
-    # 4. anything else
+    # 5. anything else
     wa.send_text(phone, HELP)
+
+
+def _as_logged(text: str, spoken: bool) -> str:
+    return f"🎤 {text}" if spoken else text
+
+
+def _hear_reply(sub: Submission, media_id: str) -> str | None:
+    """Transcribe a voice-note answer. Returns the text, or None after telling the reviewer why."""
+    if not _models_ready():
+        wa.send_text(
+            sub.phone,
+            "I can't listen to voice notes right now (our review engine is paused). "
+            "Could you type your reply instead?",
+        )
+        return None
+    wa.send_text(sub.phone, "Listening… 🎧")
+    work = _work(sub.submission_id) / f"reply-{media_id}"
+    # Bias the ASR towards names the answer is likely to contain.
+    keywords = [c.name for c in sub.place_candidates if c.name]
+    said = (sub.collected or {}).get("business_name_as_said")
+    if isinstance(said, str) and said:
+        keywords.append(said)
+    try:
+        note = fetch_voice_note(media_id, work)
+        transcript, _ = transcribe_voice_note(note, work, keywords=keywords or None)
+    except VoiceNoteError as e:
+        wa.send_text(sub.phone, str(e))
+        return None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    text = " ".join(transcript.text.split())
+    if not text:
+        wa.send_text(
+            sub.phone,
+            "I couldn't make out that voice note. Could you type your reply, or send it again?",
+        )
+        return None
+    return text
+
+
+def _start_voice_review(conv: Conversation, media_id: str) -> None:
+    sub = Submission(
+        submission_id=str(ULID()), phone=conv.phone, kind="voice", wa_media_id=media_id
+    )
+    dynamo.put_submission(sub)
+    conv.active_submission_id = sub.submission_id
+    dynamo.put_conversation(conv)
+    wa.send_text(conv.phone, "Got your voice note, listening now… 🎧")
+    _run_pipeline(sub, conv)
 
 
 # ---------------------------------------------------------------- the pipeline
@@ -207,26 +297,32 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
     work = _work(sid)
     work.mkdir(parents=True, exist_ok=True)
     try:
-        if not skip_download:
-            _set_state(sub, SubmissionState.DOWNLOADING)
-            try:
-                dl = download_reel(sub.reel_url, work)
-            except DownloadError as e:
-                _set_state(sub, SubmissionState.AWAITING_VIDEO, str(e))
-                wa.send_text(
-                    sub.phone,
-                    f"{e}\n\nIf the reel is public, you can also just send me the video file "
-                    "here on WhatsApp and I'll continue.",
-                )
+        if sub.kind == "voice":
+            audio = _ingest_voice(sub, work)
+            if audio is None:
                 return
-            video, audio = dl.video_path, dl.audio_path
+            video = None
         else:
-            video, audio = work / "source.mp4", work / "audio.wav"
-            if not video.exists() and sub.s3_video_key:
-                s3.download_file(sub.s3_video_key, video)
-                extract_audio(video, audio)
-        sub.s3_video_key = s3.upload_file(video, s3.Keys.video(sid), "video/mp4")
-        sub.s3_audio_key = s3.upload_file(audio, s3.Keys.audio(sid), "audio/wav")
+            if not skip_download:
+                _set_state(sub, SubmissionState.DOWNLOADING)
+                try:
+                    dl = download_reel(sub.reel_url or "", work)
+                except DownloadError as e:
+                    _set_state(sub, SubmissionState.AWAITING_VIDEO, str(e))
+                    wa.send_text(
+                        sub.phone,
+                        f"{e}\n\nIf the reel is public, you can also just send me the video "
+                        "file here on WhatsApp and I'll continue.",
+                    )
+                    return
+                video, audio = dl.video_path, dl.audio_path
+            else:
+                video, audio = work / "source.mp4", work / "audio.wav"
+                if not video.exists() and sub.s3_video_key:
+                    s3.download_file(sub.s3_video_key, video)
+                    extract_audio(video, audio)
+            sub.s3_video_key = s3.upload_file(video, s3.Keys.video(sid), "video/mp4")
+            sub.s3_audio_key = s3.upload_file(audio, s3.Keys.audio(sid), "audio/wav")
 
         if not _models_ready():
             _set_state(sub, SubmissionState.PAUSED, "model API key not configured")
@@ -241,34 +337,72 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
         s3.put_text(transcript.as_prompt_text(), s3.Keys.transcript_txt(sid))
         if len(transcript.text.split()) < 8:
             _set_state(sub, SubmissionState.REJECTED, "no usable speech")
-            wa.send_text(
-                sub.phone,
-                "I couldn't hear a spoken review in that video. Reviews need you talking "
-                "about your experience on camera. Try another reel?",
-            )
+            if sub.kind == "voice":
+                wa.send_text(
+                    sub.phone,
+                    "I couldn't hear a review in that voice note. Tell me about the business "
+                    "you visited: its name, where it is, what was good and what could improve. "
+                    "Send another one?",
+                )
+            else:
+                wa.send_text(
+                    sub.phone,
+                    "I couldn't hear a spoken review in that video. Reviews need you talking "
+                    "about your experience on camera. Try another reel?",
+                )
             return
 
-        _set_state(sub, SubmissionState.VERIFYING)
-        clip = transcode_for_sam(video, work / "sam.mp4")
-        clip_key = s3.upload_file(clip, s3.Keys.facecheck(sid, "sam.mp4"), "video/mp4")
-        face, artifact = run_face_check(s3.presigned_url(clip_key), transcript)
-        sub.face_check = face
-        sub.s3_facecheck_key = s3.put_json(artifact, s3.Keys.facecheck(sid, "result.json"))
-        if not face.passed:
-            _set_state(sub, SubmissionState.REJECTED, face.reason)
-            wa.send_text(
-                sub.phone,
-                "Afefehub only publishes reviews where the reviewer is on camera, so people "
-                f"know it's real. In this reel {face.reason}. Record one facing the camera "
-                "and send it again?",
-            )
-            return
+        if sub.kind == "reel":
+            assert video is not None
+            _set_state(sub, SubmissionState.VERIFYING)
+            clip = transcode_for_sam(video, work / "sam.mp4")
+            clip_key = s3.upload_file(clip, s3.Keys.facecheck(sid, "sam.mp4"), "video/mp4")
+            face, artifact = run_face_check(s3.presigned_url(clip_key), transcript)
+            sub.face_check = face
+            sub.s3_facecheck_key = s3.put_json(artifact, s3.Keys.facecheck(sid, "result.json"))
+            if not face.passed:
+                _set_state(sub, SubmissionState.REJECTED, face.reason)
+                wa.send_text(
+                    sub.phone,
+                    "Afefehub only publishes video reviews where the reviewer is on camera, so "
+                    f"people know it's real. In this reel {face.reason}. Record one facing the "
+                    "camera and send it again, or send me a voice note instead?",
+                )
+                return
+            wa.send_text(sub.phone, "Nice, you're on camera ✅ Working out the details…")
+        else:
+            wa.send_text(sub.phone, "Got it ✅ Working out the details…")
 
         _set_state(sub, SubmissionState.EXTRACTING)
-        wa.send_text(sub.phone, "Nice, you're on camera ✅ Working out the details…")
         _extract_and_route(sub, conv, latest_answer=None)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _ingest_voice(sub: Submission, work: Path) -> Path | None:
+    """Fetch (or restore) the voice note, archive it, and return the WAV for transcription.
+
+    Returns None when the note was rejected; the reviewer has already been told why.
+    """
+    sid = sub.submission_id
+    _set_state(sub, SubmissionState.DOWNLOADING)
+    note = work / "voice.ogg"
+    if not note.exists():
+        if sub.s3_audio_key:  # resuming: the note was archived on the first attempt
+            s3.download_file(s3.Keys.voice_source(sid), note)
+        else:
+            try:
+                fetch_voice_note(sub.wa_media_id or "", work)
+            except VoiceNoteError as e:
+                _set_state(sub, SubmissionState.REJECTED, str(e))
+                wa.send_text(sub.phone, str(e))
+                return None
+            s3.upload_file(note, s3.Keys.voice_source(sid), "audio/ogg")
+            playable = transcode_for_playback(note, work / "voice.m4a")
+            sub.s3_voice_key = s3.upload_file(playable, s3.Keys.voice_playback(sid), "audio/mp4")
+    audio = extract_audio(note, work / "audio.wav")
+    sub.s3_audio_key = s3.upload_file(audio, s3.Keys.audio(sid), "audio/wav")
+    return audio
 
 
 def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: str | None) -> None:
@@ -294,12 +428,13 @@ def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: st
 
     if outcome.kind == "reject":
         _set_state(sub, SubmissionState.REJECTED, outcome.reason)
+        what = "voice note" if sub.kind == "voice" else "reel"
         wa.send_text(
             sub.phone,
-            "This reel doesn't sound like a business review "
+            f"This {what} doesn't sound like a business review "
             f"({outcome.reason or 'not enough detail'}), so I can't publish it. Afefehub only "
-            "publishes reviews spoken on camera: record one where you talk about a business "
-            "you visited, what was good and what could improve, and send me that link.",
+            "publishes spoken reviews: talk about a business you visited, what was good and "
+            "what could improve, on camera in a public reel or in a voice note here.",
         )
         return
 

@@ -56,6 +56,7 @@ locals {
     MEDIA_BUCKET        = aws_s3_bucket.media.bucket
     OPENSEARCH_ENDPOINT = aws_opensearch_domain.main.endpoint
     PUBLIC_SITE_URL     = local.site_url
+    PUBLIC_API_URL      = local.api_url
     ENV                 = local.env
   }
 }

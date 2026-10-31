@@ -185,11 +185,16 @@ class PlaceCandidate(BaseModel):
     primary_type: str | None = None
 
 
+SubmissionKind = Literal["reel", "voice"]
+
+
 class Submission(BaseModel):
     submission_id: str
     phone: str
-    reel_url: str
-    reel_shortcode: str
+    kind: SubmissionKind = "reel"
+    reel_url: str | None = None  # reel submissions only
+    reel_shortcode: str | None = None
+    wa_media_id: str | None = None  # voice submissions: the WhatsApp media id of the note
     state: SubmissionState = SubmissionState.NEW
     state_updated_at: str = Field(default_factory=now_iso)
     error: str | None = None
@@ -197,6 +202,7 @@ class Submission(BaseModel):
 
     s3_video_key: str | None = None
     s3_audio_key: str | None = None
+    s3_voice_key: str | None = None  # playable m4a of a voice-note review
     s3_transcript_key: str | None = None
     s3_facecheck_key: str | None = None
     transcript: Transcript | None = None
@@ -269,11 +275,13 @@ class Review(BaseModel):
     submission_id: str
     reviewer_phone_hash: str
     reviewer_display_name: str | None = None
-    reel_url: str
-    reel_shortcode: str
+    source: SubmissionKind = "reel"
+    reel_url: str | None = None
+    reel_shortcode: str | None = None
     extraction: ReviewExtraction
     transcript_s3_key: str | None = None
     video_s3_key: str | None = None
+    audio_s3_key: str | None = None  # voice reviews: playable m4a
     face_check: FaceCheck | None = None
     created_at: str = Field(default_factory=now_iso)
     status: Literal["published", "hidden"] = "published"

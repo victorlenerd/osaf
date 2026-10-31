@@ -65,11 +65,19 @@ export interface Extraction {
   one_line_summary: string;
 }
 
+export type ReviewSource = "reel" | "voice";
+
 export interface Review {
   review_id: string;
   created_at: string;
-  reel_url: string;
-  reel_shortcode: string;
+  /** "reel": public Instagram reel. "voice": WhatsApp voice note, no video and no face check. */
+  source: ReviewSource;
+  /** null for voice reviews */
+  reel_url: string | null;
+  /** null for voice reviews */
+  reel_shortcode: string | null;
+  /** Absolute URL that redirects to the audio file (m4a). null for reel reviews or when audio is unavailable. */
+  audio_url: string | null;
   reviewer_display_name: string | null;
   extraction: Extraction;
 }

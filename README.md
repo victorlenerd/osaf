@@ -1,26 +1,31 @@
 # Afefehub
 
-**Real reviews from real faces.** Afefehub turns public Instagram video reviews into a searchable,
-continuously updated history of businesses across Africa — powered by Meta's model stack.
+**Real reviews from real voices.** Afefehub turns public Instagram video reviews and WhatsApp
+voice-note reviews into a searchable, continuously updated history of businesses across Africa —
+powered by Meta's model stack.
 
 Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai) (October 2026).
 
 ## How it works
 
 1. A reviewer posts a **public Instagram reel** reviewing a business and sends the link to the
-   Afefehub **WhatsApp** number.
-2. The backend downloads the reel and runs it through Meta's models (one API key, one base URL):
+   Afefehub **WhatsApp** number, or simply sends a **voice note** describing the visit. Replies
+   to the agent's questions (and the final "OK") can be typed or spoken.
+2. The backend downloads the reel (or the voice note) and runs it through Meta's models (one API
+   key, one base URL):
    | Step | Model | What it does |
    |---|---|---|
    | Transcribe | `muse-voice-transcribe-1.0` | Diarized speech-to-text of the review |
-   | Verify | `sam-3.1` | Text-prompted face detection/tracking across the video: a real person must be on camera |
+   | Verify | `sam-3.1` | Text-prompted face detection/tracking across the video: a real person must be on camera (reels only; voice-note reviews skip this step and are badged "Voice review" on the site) |
    | Understand | `muse-spark-1.3` | Tool-calling agent: resolves the business via Google Places, extracts visit time/place, what was good, what to improve, recommend yes/no, category and keywords; asks the reviewer on WhatsApp when the transcript is not enough |
    | Summarize | `muse-spark-1.3` | Regenerates the business's running summary after every published review |
-3. The review, transcript and video are archived in S3; the business is indexed in OpenSearch and
-   published on **afefehub.com**, searchable by name, address or keyword.
+3. The review, transcript and video (or voice note, transcoded to a playable m4a) are archived in
+   S3; the business is indexed in OpenSearch and published on **afefehub.com**, searchable by
+   name, address or keyword. Voice reviews stream from the business page.
 
 ```
 IG reel → WhatsApp link → webhook → download → transcribe → face check → agent (+ clarifications)
+voice note → WhatsApp → webhook → fetch → transcribe ───────────────┘
        → confirm → publish → business history + running summary → search on afefehub.com
 ```
 

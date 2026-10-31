@@ -26,6 +26,14 @@ class Keys:
         return f"submissions/{sid}/audio.wav"
 
     @staticmethod
+    def voice_source(sid: str) -> str:
+        return f"submissions/{sid}/voice.ogg"
+
+    @staticmethod
+    def voice_playback(sid: str) -> str:
+        return f"submissions/{sid}/voice.m4a"
+
+    @staticmethod
     def transcript_json(sid: str) -> str:
         return f"submissions/{sid}/transcript.json"
 

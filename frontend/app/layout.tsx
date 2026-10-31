@@ -7,9 +7,9 @@ import Footer from "@/components/Footer";
 const lato = Lato({ subsets: ["latin"], weight: ["400", "700", "900"], variable: "--font-lato", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "Afefehub — real reviews from real faces", template: "%s · Afefehub" },
+  title: { default: "Afefehub — real reviews from real voices", template: "%s · Afefehub" },
   description:
-    "Find businesses across Africa reviewed on video. Authentic Instagram reel reviews, verified and summarised by AI.",
+    "Find businesses across Africa reviewed by real people. Authentic Instagram reel reviews and WhatsApp voice notes, verified and summarised by AI.",
   metadataBase: new URL("https://afefehub.com"),
   icons: {
     icon: [
@@ -23,15 +23,15 @@ export const metadata: Metadata = {
   manifest: "/site.webmanifest",
   openGraph: {
     title: "Afefehub",
-    description: "Real reviews from real faces. Find businesses across Africa reviewed on video.",
+    description: "Real reviews from real voices. Find businesses across Africa reviewed on video or by voice note.",
     siteName: "Afefehub",
     type: "website",
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Afefehub — real reviews from real faces" }],
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Afefehub — real reviews from real voices" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Afefehub",
-    description: "Real reviews from real faces. Find businesses across Africa reviewed on video.",
+    description: "Real reviews from real voices. Find businesses across Africa reviewed on video or by voice note.",
     images: ["/og-image.png"],
   },
 };

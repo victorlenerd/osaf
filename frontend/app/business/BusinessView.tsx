@@ -114,7 +114,7 @@ export default function BusinessView() {
             </svg>
             Open in Google Maps
           </a>
-          <span className="muted">{pluralize(business.review_count, "video review")}</span>
+          <span className="muted">{pluralize(business.review_count, "review")}</span>
           {business.review_count > 0 && (
             <span className="muted">
               {percent(business.recommend_rate)} recommend · {business.recommend_counts.yes} yes / {business.recommend_counts.maybe} maybe / {business.recommend_counts.no} no
@@ -130,12 +130,12 @@ export default function BusinessView() {
       <section className="mt-10" aria-labelledby="reviews-title">
         <div className="flex items-baseline justify-between">
           <h2 id="reviews-title" className="font-display text-2xl font-semibold" style={{ color: "var(--brand)" }}>
-            Video reviews
+            Reviews
           </h2>
-          <span className="text-sm muted">{pluralize(reviews.length, "reel")}</span>
+          <span className="text-sm muted">{pluralize(reviews.length, "review")}</span>
         </div>
         {reviews.length === 0 ? (
-          <div className="card mt-4 p-6 text-center text-sm muted">No video reviews yet. Be the first.</div>
+          <div className="card mt-4 p-6 text-center text-sm muted">No reviews yet. Be the first.</div>
         ) : (
           <div className="mt-4 grid gap-5">
             {reviews.map((r) => (
