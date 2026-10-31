@@ -28,6 +28,7 @@ from app.models import (
     SubmissionState,
     now_iso,
 )
+from app.pii import phone_label
 from app.pipeline import publish, quota
 from app.pipeline.download import (
     DownloadError,
@@ -134,7 +135,7 @@ def process_inbound(phone: str, msg: dict, display_name: str | None = None) -> N
     try:
         _process_inbound(phone, msg, display_name)
     except Exception:  # noqa: BLE001
-        log.error("unhandled error for %s: %s", phone, traceback.format_exc())
+        log.error("unhandled error for %s: %s", phone_label(phone), traceback.format_exc())
         wa.send_text(phone, "Something went wrong on my side. Please try again in a minute.")
 
 
@@ -344,6 +345,13 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
                 try:
                     dl = download_reel(sub.reel_url or "", work)
                 except DownloadError as e:
+                    if not e.retryable_via_whatsapp:  # too long / too large: a file won't help
+                        _set_state(sub, SubmissionState.REJECTED, str(e))
+                        wa.send_text(
+                            sub.phone,
+                            f"{e}\n\nTry a shorter reel, or send me a voice note instead.",
+                        )
+                        return
                     _set_state(sub, SubmissionState.AWAITING_VIDEO, str(e))
                     wa.send_text(
                         sub.phone,

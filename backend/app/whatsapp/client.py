@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 
 from app.config import get_settings
+from app.pii import phone_label
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ def _headers() -> dict:
 def send_text(to: str, body: str, *, preview_url: bool = True) -> None:
     s = get_settings()
     if not s.whatsapp_access_token:
-        log.info("[dry-run] -> %s: %s", to, body)
+        log.info("[dry-run] -> %s: %d chars", phone_label(to), len(body))
         return
     r = httpx.post(
         f"{_base()}/{s.whatsapp_phone_number_id}/messages",

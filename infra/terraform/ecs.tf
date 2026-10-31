@@ -155,11 +155,33 @@ resource "aws_ecs_task_definition" "backend" {
     cpu_architecture        = "X86_64"
   }
 
+  # Scratch space for downloaded reels, ffmpeg output and voice notes. Sized so a few
+  # max_reel_bytes downloads in flight cannot exhaust it; the app cleans up per submission.
+  ephemeral_storage {
+    size_in_gib = 30
+  }
+
+  volume {
+    name = "tmp"
+  }
+
   container_definitions = jsonencode([
     {
       name      = "backend"
       image     = local.backend_image
       essential = true
+
+      # The image runs as uid 10001; only /tmp (the volume below) is writable.
+      user                   = "10001:10001"
+      readonlyRootFilesystem = true
+      mountPoints = [{
+        sourceVolume  = "tmp"
+        containerPath = "/tmp"
+        readOnly      = false
+      }]
+      linuxParameters = {
+        capabilities = { drop = ["ALL"] }
+      }
 
       portMappings = [{
         containerPort = 8000

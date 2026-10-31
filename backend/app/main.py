@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.public import router as public_router
 from app.config import get_settings
+from app.pii import RedactPhoneNumbers
 from app.whatsapp.webhook import router as whatsapp_router
 
 settings = get_settings()
@@ -35,6 +36,9 @@ class RedactVerifyToken(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(RedactVerifyToken())
+# Defense in depth: no WhatsApp number reaches CloudWatch even if a call site logs one.
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RedactPhoneNumbers())
 
 
 @asynccontextmanager

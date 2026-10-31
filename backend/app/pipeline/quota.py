@@ -6,20 +6,18 @@ abandoned attempts never count and deleting a business frees its slots.
 
 from __future__ import annotations
 
-import hashlib
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.config import get_settings
+from app.pii import phone_hash
 from app.store import dynamo
+
+__all__ = ["WeeklyQuota", "humanize_until", "phone_hash", "slots_line", "weekly_quota"]
 
 WINDOW = timedelta(days=7)
 ISO = "%Y-%m-%dT%H:%M:%SZ"
-
-
-def phone_hash(phone: str) -> str:
-    return hashlib.sha256((get_settings().phone_hash_salt + phone).encode()).hexdigest()[:24]
 
 
 def _parse(iso: str) -> datetime:

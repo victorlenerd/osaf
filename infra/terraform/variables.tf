@@ -114,5 +114,18 @@ variable "secret_names" {
     "WHATSAPP_VERIFY_TOKEN",
     "META_APP_SECRET",
     "IG_COOKIES_B64",
+    "PHONE_HASH_SALT",
   ]
+}
+
+variable "waf_places_rate_limit" {
+  description = "Max requests per source IP per 5 minutes to /api/places/* (paid Google + model calls)."
+  type        = number
+  default     = 100
+}
+
+variable "waf_api_rate_limit" {
+  description = "Max requests per source IP per 5 minutes to /api/* overall."
+  type        = number
+  default     = 2000
 }

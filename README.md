@@ -79,6 +79,11 @@ See [`frontend/README.md`](frontend/README.md) for the mock API, build and deplo
 All settings are environment variables; see [`.env.example`](.env.example). Secrets are never committed.
 In AWS they live in SSM Parameter Store under `/afefehub/prod/` and are injected into the ECS task.
 
+With `ENV=prod` the backend refuses to start unless every required secret is set (`MODEL_API_KEY`,
+`META_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`,
+`PHONE_HASH_SALT`), so set them with `scripts/set_secrets.sh` **before** rolling a new image. Webhooks
+without a valid `X-Hub-Signature-256` are rejected everywhere except `ENV=dev`.
+
 ## Contributing
 
 Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); security

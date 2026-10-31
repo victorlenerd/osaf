@@ -6,7 +6,7 @@
 # Values are never echoed. Roll the service afterwards so tasks pick them up.
 set -euo pipefail
 REGION="${AWS_REGION:-us-east-1}"
-NAMES=(MODEL_API_KEY GOOGLE_PLACES_API_KEY WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN META_APP_SECRET IG_COOKIES_B64)
+NAMES=(MODEL_API_KEY GOOGLE_PLACES_API_KEY WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN META_APP_SECRET IG_COOKIES_B64 PHONE_HASH_SALT)
 
 put() { # name value
   aws ssm put-parameter --region "$REGION" --name "/afefehub/prod/$1" --type SecureString --value "$2" --overwrite >/dev/null

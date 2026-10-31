@@ -58,7 +58,21 @@ def _cookie_file(work: Path) -> Path | None:
 
 def download_reel(url: str, work: Path) -> DownloadResult:
     work.mkdir(parents=True, exist_ok=True)
+    s = get_settings()
     out = work / "source.%(ext)s"
+    refused: list[str] = []
+
+    def _too_long(info: dict, *, incomplete: bool = False) -> str | None:
+        # yt-dlp match_filter: a string skips the download (checked before any bytes move).
+        duration = info.get("duration")
+        if duration and duration > s.max_reel_seconds:
+            refused.append(
+                f"That reel is {duration / 60:.0f} minutes long; I can only review reels up "
+                f"to {s.max_reel_seconds // 60} minutes."
+            )
+            return refused[-1]
+        return None
+
     opts = {
         "outtmpl": str(out),
         "format": "bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/b",
@@ -68,6 +82,9 @@ def download_reel(url: str, work: Path) -> DownloadResult:
         "no_warnings": True,
         "noplaylist": True,
         "retries": 2,
+        "cachedir": False,  # the container's root filesystem is read-only
+        "max_filesize": s.max_reel_bytes,  # oversize files are skipped, never written to disk
+        "match_filter": _too_long,
     }
     cookies = _cookie_file(work)
     if cookies:
@@ -86,11 +103,16 @@ def download_reel(url: str, work: Path) -> DownloadResult:
             raise DownloadError("Instagram is rate-limiting downloads right now.") from e
         raise DownloadError(f"Could not download the reel: {msg[:200]}") from e
 
+    if refused:
+        raise DownloadError(refused[0], retryable_via_whatsapp=False)
     video = work / "source.mp4"
     if not video.exists():
         candidates = sorted(work.glob("source.*"))
         if not candidates:
-            raise DownloadError("Download produced no file.")
+            raise DownloadError(
+                f"That reel is too large for me to download (over {s.max_reel_bytes >> 20} MB).",
+                retryable_via_whatsapp=False,
+            )
         video = candidates[0]
     audio = extract_audio(video, work / "audio.wav")
     return DownloadResult(

@@ -61,9 +61,19 @@ data "aws_iam_policy_document" "task" {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
     resources = ["${aws_s3_bucket.media.arn}/*"]
   }
+  # Exactly the item operations app/store/dynamo.py performs; no Scan, no table admin.
   statement {
-    sid     = "DynamoTable"
-    actions = ["dynamodb:*"]
+    sid = "DynamoTable"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:BatchGetItem",
+      "dynamodb:PutItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:ConditionCheckItem",
+    ]
     resources = [
       aws_dynamodb_table.main.arn,
       "${aws_dynamodb_table.main.arn}/index/*",
@@ -71,19 +81,10 @@ data "aws_iam_policy_document" "task" {
   }
   statement {
     sid       = "OpenSearch"
-    actions   = ["es:ESHttp*"]
+    actions   = ["es:ESHttpGet", "es:ESHttpHead", "es:ESHttpPost", "es:ESHttpPut", "es:ESHttpDelete"]
     resources = ["${local.opensearch_domain_arn}/*"]
   }
-  statement {
-    sid       = "SsmParameters"
-    actions   = ["ssm:GetParameters", "ssm:GetParameter", "ssm:GetParametersByPath"]
-    resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter${local.ssm_prefix}/*"]
-  }
-  statement {
-    sid       = "SsmDecrypt"
-    actions   = ["kms:Decrypt"]
-    resources = [data.aws_kms_alias.ssm.target_key_arn]
-  }
+  # Secrets are injected by the execution role at task start; the app never reads SSM itself.
   # ECS Exec (aws ecs execute-command) for debugging a running task.
   statement {
     sid = "EcsExec"

@@ -33,10 +33,16 @@ def verify(
 
 
 def _valid_signature(raw: bytes, header: str | None) -> bool:
-    secret = get_settings().meta_app_secret
+    s = get_settings()
+    secret = s.meta_app_secret
     if not secret:
-        log.warning("META_APP_SECRET not set; skipping signature check")
-        return True
+        # Only a local dev box may run unsigned. Prod cannot start without the secret
+        # (app/config.py), and any other environment fails closed here.
+        if s.env == "dev":
+            log.warning("META_APP_SECRET not set; accepting unsigned webhook (ENV=dev only)")
+            return True
+        log.error("META_APP_SECRET not set; rejecting webhook")
+        return False
     if not header or not header.startswith("sha256="):
         return False
     expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
