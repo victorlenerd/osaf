@@ -323,6 +323,9 @@ class Review(BaseModel):
     submission_id: str
     reviewer_phone_hash: str
     reviewer_display_name: str | None = None
+    # ISO-3166 alpha-2 of the WhatsApp number's dialing code (shown as a flag); coarse enough
+    # to publish, unlike the number itself. None when the number did not parse.
+    reviewer_country: str | None = None
     source: SubmissionKind = "reel"
     reel_url: str | None = None
     reel_shortcode: str | None = None

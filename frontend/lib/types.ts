@@ -79,6 +79,8 @@ export interface Review {
   /** Absolute URL that redirects to the audio file (m4a). null for reel reviews or when audio is unavailable. */
   audio_url: string | null;
   reviewer_display_name: string | null;
+  /** ISO-3166 alpha-2 derived from the reviewer's WhatsApp dialing code; null when unknown. */
+  reviewer_country: string | null;
   extraction: Extraction;
 }
 

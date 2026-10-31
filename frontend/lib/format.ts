@@ -20,3 +20,9 @@ export function mapsUrl(opts: { lat?: number; lng?: number; name: string; addres
 export function pluralize(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/** Regional-indicator flag for an ISO-3166 alpha-2 code ("NG" → 🇳🇬); "" when the code is unusable. */
+export function flagEmoji(code: string | null | undefined): string {
+  if (!code || !/^[A-Za-z]{2}$/.test(code)) return "";
+  return String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}

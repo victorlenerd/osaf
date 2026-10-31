@@ -75,6 +75,7 @@ def business(business_id: str):
                 "reel_shortcode": r.reel_shortcode,
                 "audio_url": audio_url(r),
                 "reviewer_display_name": r.reviewer_display_name,
+                "reviewer_country": r.reviewer_country,
                 "extraction": r.extraction.model_dump(
                     exclude={"business", "confidence"}, exclude_none=True
                 ),

@@ -1,6 +1,6 @@
 import type { Review } from "@/lib/types";
-import { formatDate } from "@/lib/format";
-import { languageName } from "@/lib/constants";
+import { flagEmoji, formatDate } from "@/lib/format";
+import { countryName, languageName } from "@/lib/constants";
 import { RecommendBadge, SentimentDot, Tag } from "./Badges";
 import InstagramEmbed from "./InstagramEmbed";
 import VoicePlayer from "./VoicePlayer";
@@ -29,6 +29,8 @@ export default function ReviewCard({ review }: { review: Review }) {
   const isVoice = review.source === "voice";
   const reviewerKind = isVoice ? "Voice reviewer" : "Instagram reviewer";
   const anonymous = isVoice ? "a voice reviewer" : "an Instagram reviewer";
+  const flag = flagEmoji(review.reviewer_country);
+  const country = review.reviewer_country ? countryName(review.reviewer_country) : "";
   return (
     <article className="card overflow-hidden" aria-label={`Review by ${review.reviewer_display_name ?? anonymous}`}>
       <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_320px]">
@@ -41,6 +43,11 @@ export default function ReviewCard({ review }: { review: Review }) {
           </div>
           <p className="font-display mt-3 text-lg font-semibold leading-snug">&ldquo;{x.one_line_summary}&rdquo;</p>
           <p className="mt-2 text-sm muted">
+            {flag && (
+              <span role="img" aria-label={`Reviewer from ${country}`} title={country} className="mr-1">
+                {flag}
+              </span>
+            )}
             {review.reviewer_display_name ?? reviewerKind} · {formatDate(review.created_at)}
             {visitBits.length > 0 && (
               <>

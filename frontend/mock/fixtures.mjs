@@ -4,7 +4,7 @@ const now = "2026-10-28T14:20:00Z";
 
 const MOCK_BASE = `http://localhost:${process.env.PORT || 8000}`;
 
-function review(id, shortcode, name, extraction, createdAt) {
+function review(id, shortcode, name, country, extraction, createdAt) {
   return {
     review_id: id,
     created_at: createdAt,
@@ -13,12 +13,13 @@ function review(id, shortcode, name, extraction, createdAt) {
     reel_shortcode: shortcode,
     audio_url: null,
     reviewer_display_name: name,
+    reviewer_country: country,
     extraction,
   };
 }
 
 // A WhatsApp voice-note review: no reel, no face check, audio streamed from the API.
-function voiceReview(id, name, extraction, createdAt) {
+function voiceReview(id, name, country, extraction, createdAt) {
   return {
     review_id: id,
     created_at: createdAt,
@@ -27,6 +28,7 @@ function voiceReview(id, name, extraction, createdAt) {
     reel_shortcode: null,
     audio_url: `${MOCK_BASE}/api/review/${id}/audio`,
     reviewer_display_name: name,
+    reviewer_country: country,
     extraction,
   };
 }
@@ -72,6 +74,7 @@ export const businesses = [
       voiceReview(
         "rev_004",
         "Amaka",
+        "NG",
         {
           business_name_as_said: "Mama Put Kitchen",
           visit: { when_text: "Tuesday lunch", when_iso: "2026-10-28", where_text: "Yaba" },
@@ -90,6 +93,7 @@ export const businesses = [
         "rev_001",
         "C7xQ2mPxyz1",
         "Tolu A.",
+        "NG",
         {
           business_name_as_said: "Mama Put",
           visit: { when_text: "last Friday afternoon", when_iso: "2026-10-24", where_text: "Yaba, by the main road" },
@@ -108,6 +112,7 @@ export const businesses = [
         "rev_002",
         "C7aB3nQrst2",
         "Chidi",
+        "NG",
         {
           business_name_as_said: "Mama Put Kitchen Yaba",
           visit: { when_text: "two weeks ago", when_iso: null, where_text: "Herbert Macaulay Way" },
@@ -126,6 +131,7 @@ export const businesses = [
         "rev_003",
         "C6zY9kLmno3",
         null,
+        "GH",
         {
           business_name_as_said: "Mama Put",
           visit: { when_text: "yesterday", when_iso: "2026-10-01", where_text: null },
@@ -179,6 +185,7 @@ export const businesses = [
         "rev_010",
         "C8pQ1wErty4",
         "Kofi B.",
+        "GH",
         {
           business_name_as_said: "Kente Cuts",
           visit: { when_text: "this morning", when_iso: "2026-10-20", where_text: "Osu, Oxford Street" },
@@ -232,6 +239,7 @@ export const businesses = [
         "rev_020",
         "C8aZ5xCvbn5",
         "Wanjiru",
+        "KE",
         {
           business_name_as_said: "Westlands Coffee Corner",
           visit: { when_text: "Saturday brunch", when_iso: "2026-10-18", where_text: "Westlands" },
@@ -250,6 +258,7 @@ export const businesses = [
         "rev_021",
         "C7hJ8uIopq6",
         "Dan M.",
+        "KE",
         {
           business_name_as_said: "the coffee place in Westlands",
           visit: { when_text: "weekday morning", when_iso: null, where_text: "Woodvale Grove" },

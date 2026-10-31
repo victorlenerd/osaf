@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { PlaceCandidate } from "@/lib/types";
-import { placeTypeLabel } from "@/lib/constants";
+import { countryName, placeTypeLabel } from "@/lib/constants";
 import { Tag } from "./Badges";
 
 export function GoogleVerifiedPill() {
@@ -45,7 +45,7 @@ export default function PlaceCandidateCard({ candidate }: { candidate: PlaceCand
         </h3>
         <p className="mt-0.5 text-sm muted">{candidate.formatted_address}</p>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span className="muted">{[candidate.city, candidate.country].filter(Boolean).join(", ")}</span>
+          <span className="muted">{[candidate.city, candidate.country ? countryName(candidate.country) : null].filter(Boolean).join(", ")}</span>
           <span className="inline-flex items-center gap-1 font-medium" style={{ color: "var(--accent-ink)" }}>
             See Google reviews
             <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -656,16 +656,18 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
         business=PlaceRef(place_id="x", name="n", formatted_address="a", country="NG"),
         business_name_as_said="n",
     )
+    phone = "254712345678"  # Kenyan number: the published review carries its flag country
     sub = Submission(
-        submission_id="v1", phone="p", kind="voice", extraction=ext,
+        submission_id="v1", phone=phone, kind="voice", extraction=ext,
         s3_voice_key="submissions/v1/voice.m4a", state=SubmissionState.CONFIRMING,
     )  # fmt: skip
-    review = publish.publish_submission(sub, Conversation(phone="p"))
+    review = publish.publish_submission(sub, Conversation(phone=phone))
     assert review is saved["review"]
     assert review.source == "voice" and review.reel_url is None
     assert review.audio_s3_key == "submissions/v1/voice.m4a"
+    assert review.reviewer_country == "KE"
     assert sub.state == SubmissionState.PUBLISHED
-    assert awarded == [("p", 10)]
+    assert awarded == [(phone, 10)]
     assert "+10 points" in sent[0] and "you now have 40" in sent[0]
 
 
@@ -700,3 +702,31 @@ def test_review_audio_endpoint(monkeypatch):
     assert r.headers["location"] == "https://s3.test/submissions/v1/voice.m4a?sig"
     assert c.get("/api/review/r2/audio", follow_redirects=False).status_code == 404
     assert c.get("/api/review/nope/audio", follow_redirects=False).status_code == 404
+
+
+def test_business_endpoint_exposes_reviewer_country_not_hash(monkeypatch):
+    from app.api import public
+    from app.main import app
+    from app.models import Business, PlaceRef, ReviewExtraction
+
+    ext = ReviewExtraction(
+        business=PlaceRef(place_id="x", name="n", formatted_address="a", country="NG"),
+        business_name_as_said="n",
+    )
+    flagged = Review(
+        review_id="r1", business_id="x", submission_id="s1", reviewer_phone_hash="h",
+        reviewer_country="GH", extraction=ext,
+    )  # fmt: skip
+    legacy = Review(  # published before the field existed: no flag, no crash
+        review_id="r0", business_id="x", submission_id="s0", reviewer_phone_hash="h",
+        extraction=ext,
+    )  # fmt: skip
+    biz = Business(business_id="x", name="n", formatted_address="a", country="NG")
+    monkeypatch.setattr(public.dynamo, "get_business", lambda bid: biz)
+    monkeypatch.setattr(public.dynamo, "get_summary", lambda bid: None)
+    monkeypatch.setattr(public.dynamo, "list_reviews", lambda bid: [flagged, legacy])
+    body = TestClient(app).get("/api/business/x").json()
+    by_id = {r["review_id"]: r for r in body["reviews"]}
+    assert by_id["r1"]["reviewer_country"] == "GH"
+    assert by_id["r0"]["reviewer_country"] is None
+    assert "reviewer_phone_hash" not in by_id["r1"]

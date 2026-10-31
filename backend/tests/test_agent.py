@@ -221,6 +221,7 @@ def test_summary_merges_model_output_with_computed_counts():
         business_id="ChIJ123", name="Mama Put Kitchen", formatted_address="x", country="NG"
     )
     s = generate_summary(biz, reviews, None, chat=chat)
+    assert chat.calls[0]["reasoning_effort"] == "minimal"
     assert s.review_count == 3
     assert s.recommendation_rate == round(2 / 3, 3)
     assert s.last_review_at == "2026-10-03T00:00:00Z"

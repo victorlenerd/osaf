@@ -52,8 +52,16 @@ export function placeTypeLabel(value: string | null | undefined): string {
 }
 
 const COUNTRY_NAMES = new Map<string, string>(COUNTRIES.map((c) => [c.code, c.name]));
+/** Human name for an ISO alpha-2 code: our curated list first, then the runtime's region names
+ *  (reviewer dialing codes can come from anywhere), then the code itself. */
 export function countryName(code: string): string {
-  return COUNTRY_NAMES.get(code) ?? code;
+  const known = COUNTRY_NAMES.get(code);
+  if (known) return known;
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {

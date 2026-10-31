@@ -6,6 +6,7 @@ import logging
 
 from ulid import ULID
 
+from app.agent.places import country_from_phone
 from app.agent.summary import generate_summary
 from app.config import get_settings
 from app.models import Conversation, Review, Submission, SubmissionState, now_iso
@@ -42,6 +43,7 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         submission_id=sub.submission_id,
         reviewer_phone_hash=phone_hash(sub.phone),
         reviewer_display_name=conv.display_name,
+        reviewer_country=country_from_phone(sub.phone),
         source=sub.kind,
         reel_url=sub.reel_url,
         reel_shortcode=sub.reel_shortcode,
