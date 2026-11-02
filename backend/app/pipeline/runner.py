@@ -451,7 +451,21 @@ def _run_deletion(conv: Conversation) -> None:
     conv.erasure_started_at = now_iso()
     dynamo.put_conversation(conv)
     wa.send_text(conv.phone, "Deleting now… this takes a moment.")
-    report = erase.erase_reviewer(conv.phone)
+    try:
+        report = erase.erase_reviewer(conv.phone)
+    except Exception:  # noqa: BLE001
+        # Lift the hold, or the number would be locked out for ERASURE_MAX_SECONDS with no
+        # way to restart. Anything already removed stays removed; a retry finishes the rest.
+        log.exception("erasure failed for %s", phone_label(conv.phone))
+        conv.erasure_started_at = None
+        dynamo.clear_erasure_marker(conv.phone)
+        wa.send_text(
+            conv.phone,
+            "Something went wrong part-way through deleting your data. Nothing that was "
+            "removed has come back, and we've logged the failure. Send *delete my data* "
+            "again to finish the job, or email privacy@afefehub.com.",
+        )
+        return
     if report.clean:
         wa.send_text(
             conv.phone,

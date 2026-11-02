@@ -115,6 +115,10 @@ class FakeStore:
         if phone in self.convs:  # conditional on the item existing, like the real one
             self.convs[phone].deletion_requested_at = None
 
+    def clear_erasure_marker(self, phone):
+        if phone in self.convs:
+            self.convs[phone].erasure_started_at = None
+
     def get_points(self, phone):
         return self.points.get(phone, 0)
 
@@ -979,6 +983,33 @@ def test_video_only_counts_as_content_when_one_is_awaited(eraser, monkeypatch):
     runner.process_inbound(PHONE, video, "Ada")
     assert any("Carrying on" in b for _, b in sent[-3:])
     assert events[-1] == "pipeline:sc" and not erased
+
+
+def test_failed_erasure_lifts_the_hold_and_can_be_retried(eraser, monkeypatch):
+    store, sent, events, erased = eraser
+    attempts: list[str] = []
+
+    def flaky(phone):
+        attempts.append(phone)
+        if len(attempts) == 1:
+            raise RuntimeError("opensearch down")
+        from app.pipeline import erase
+
+        return erase.ErasureReport(reference="01REF", reviews=0, submissions=0)
+
+    monkeypatch.setattr(runner.erase, "erase_reviewer", flaky)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert attempts == [PHONE] and "went wrong part-way" in sent[-1][1]
+    conv = store.convs[PHONE]
+    assert conv.erasure_started_at is None and conv.deletion_requested_at is None
+    # the chat is not locked: an ordinary message gets an ordinary reply...
+    runner.process_inbound(PHONE, _text("hello?"), "Ada")
+    assert "Afefehub" in sent[-1][1] and "in progress" not in sent[-1][1]
+    # ...and a fresh request + DELETE runs the erasure again
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert attempts == [PHONE, PHONE] and "Done ✅" in sent[-1][1]
 
 
 def test_erasure_waits_for_a_running_pipeline(eraser):

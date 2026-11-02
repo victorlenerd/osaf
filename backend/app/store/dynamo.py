@@ -80,18 +80,28 @@ def put_conversation(c: Conversation) -> None:
     _table().put_item(Item={"PK": f"CONV#{c.phone}", "SK": "META", **_to_item(c)})
 
 
-def clear_deletion_request(phone: str) -> None:
-    """Withdraw a pending "delete my data" request in place. Conditional on the item still
-    existing, so a withdrawal that races an erasure can never resurrect the conversation."""
+def _remove_conversation_attrs(phone: str, *names: str) -> None:
+    """In-place REMOVE, conditional on the item still existing, so a flag change that races
+    an erasure can never resurrect a deleted conversation."""
     try:
         _table().update_item(
             Key={"PK": f"CONV#{phone}", "SK": "META"},
-            UpdateExpression="REMOVE deletion_requested_at",
+            UpdateExpression="REMOVE " + ", ".join(names),
             ConditionExpression="attribute_exists(PK)",
         )
     except ClientError as e:
         if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
             raise
+
+
+def clear_deletion_request(phone: str) -> None:
+    """Withdraw a pending "delete my data" request."""
+    _remove_conversation_attrs(phone, "deletion_requested_at")
+
+
+def clear_erasure_marker(phone: str) -> None:
+    """Lift the "erasure in progress" hold after a failed run so the reviewer can retry."""
+    _remove_conversation_attrs(phone, "erasure_started_at")
 
 
 # -------------------------------------------------------------------- submissions
