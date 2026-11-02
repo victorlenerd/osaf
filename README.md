@@ -103,8 +103,10 @@ One API key, one base URL (`https://api.meta.ai/v1`), one client (`backend/app/m
 - At most 3 clarification rounds. At zero, `ask_user` is removed from the tool list, so the model
   must finalize or reject. At most 8 iterations and 4 searches per turn.
 - `reject_review` filters vlogs, skits, unboxings and rants: Afefehub only publishes spoken reviews of a real visit.
-- The agent is **stateless per WhatsApp turn**: the transcript, fields so far, Q&A log and the last
-  candidates shown are rebuilt from DynamoDB each time, so a deploy mid-conversation loses nothing.
+- The agent is **stateless per WhatsApp turn**: the transcript, its own draft from earlier rounds
+  (`ask_user.fields_so_far`), Q&A log and the last candidates shown are rebuilt from DynamoDB each
+  time, so a deploy mid-conversation loses nothing and a clarification round only has to resolve
+  the missing fields.
 
 ## Architecture
 
@@ -133,6 +135,7 @@ Submission state machine (one active submission per phone, re-runnable from any 
 NEW → DOWNLOADING → TRANSCRIBING → VERIFYING → EXTRACTING ⇄ AWAITING_CLARIFICATION → CONFIRMING → PUBLISHED
 any stage → REJECTED · a new link ABANDONs the old one · failed download → AWAITING_VIDEO (reviewer sends the file on WhatsApp)
 no model key → PAUSED (media kept, resumes later) · voice notes skip VERIFYING
+a voice note while a submission waits on the reviewer is its reply only if short (≤ 30 s) and recent (≤ 6 h); otherwise it starts a new voice review and ABANDONs the old one
 ```
 
 | Layer | What |
@@ -246,7 +249,10 @@ pytest
 uvicorn app.main:app --reload
 ```
 
-Try the Meta pipeline without WhatsApp, on a reel or a voice note:
+Try the Meta pipeline without WhatsApp, on a reel, a voice note, or a typed transcript. With
+`--extract` the script walks through the agent's clarification rounds: it prints each question
+with the draft carried to the next round and reads your reply from the terminal (or from
+repeated `--answer` flags).
 
 ```bash
 python scripts/run_pipeline_local.py https://www.instagram.com/reel/XXXXXXXX/ --extract
@@ -254,6 +260,10 @@ python scripts/run_pipeline_local.py https://www.instagram.com/reel/XXXXXXXX/ --
 
 ```bash
 python scripts/run_pipeline_local.py --voice note.ogg --extract
+```
+
+```bash
+python scripts/run_pipeline_local.py --text "I went to that suya spot in Yaba last Friday..." --country NG
 ```
 
 Expose the webhook for WhatsApp during development with a tunnel (for example
