@@ -75,3 +75,32 @@ browser streams and seeks directly).
 ## Deployment
 Terraform in `infra/terraform/`: Route53 zone, ACM, S3 + CloudFront (site), ECS Fargate + ALB
 (API), DynamoDB, OpenSearch (1 × t3.small), ECR, SSM parameters for secrets.
+
+## Weekly Instagram highlights
+
+`backend/scripts/weekly_highlights.py` turns the week's published reviews into a "Reviews of the
+week" carousel for the Afefehub Instagram page. It runs by hand (or later from a scheduler) and is
+a dry run unless told otherwise.
+
+1. **Fetch** (`app/social/fetch_week.py`): businesses whose `updated_at` moved in the window, from
+   the per-category GSI1 (`CAT#<category>` / `BIZ#<updated_at>`; `updated_at` only changes on
+   publish), then each one's reviews by SK range. Read-only `Query` calls, no `Scan`.
+2. **Filter** (`app/social/candidates.py`): published only, demo rows out, summaries long enough,
+   `--exclude` ids out. A `Candidate` carries first name and country flag, never the phone hash.
+3. **Rank** (`app/social/rank.py`): Muse Spark gets a compact candidate list and returns ordered
+   ids with a reason each plus a hook sentence; everything is validated against the candidate set
+   (known ids, one per business, capped) and a deterministic heuristic tops up or replaces it.
+   `picks.json` records the result so `--from-picks` re-renders the same carousel without a model call.
+4. **Render** (`app/social/render.py`): Pillow, 1080x1350 JPEGs drawn at 2x; cover, one slide per
+   review, closing CTA; Twemoji flags with an offline ISO chip fallback; `preview.png` contact sheet.
+5. **Caption** (`app/social/caption.py`): deterministic template, within Instagram's 2200 chars and
+   30 hashtags.
+6. **Publish** (`app/social/instagram.py`, `--publish`): slides go to
+   `s3://<media bucket>/social/weekly/<window>/` and Meta fetches them through 1 h presigned URLs;
+   image containers -> carousel container -> poll `status_code` -> `media_publish`. A typed `yes`
+   (or `--yes`) guards the call. `published.json` lands next to the slides and in S3. `--preflight`
+   only reads the account name and the 24 h quota.
+
+Settings: `IG_USER_ID`, `IG_ACCESS_TOKEN` (SSM `/afefehub/prod/`), `IG_API_BASE`
+(`graph.facebook.com` for Facebook Login tokens, `graph.instagram.com` for Instagram Login tokens)
+and `WHATSAPP_PUBLIC_NUMBER` for the CTA slide.

@@ -19,6 +19,7 @@ dependencies = [
     "python-ulid>=2.7",
     "python-multipart>=0.0.9",
     "phonenumbers>=8.13",
+    "pillow>=10.4",
 ]
 
 [project.optional-dependencies]
@@ -44,3 +45,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.social" = ["assets/*", "assets/fonts/*"]

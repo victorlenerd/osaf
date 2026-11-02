@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.models import (
+    CATEGORIES,
     Business,
     BusinessSummary,
     Conversation,
@@ -218,6 +219,26 @@ def list_businesses_by_category(category: str, limit: int = 50) -> list[Business
     return [Business(**_from_item(i)) for i in r.get("Items", [])]
 
 
+def list_businesses_updated_since(since_iso: str) -> list[Business]:
+    """Businesses whose `updated_at` is at or after `since_iso`: it only moves when a review is
+    published (upsert_business_on_publish), so this is "businesses reviewed since". One GSI1
+    query per category; no Scan (the task role has none)."""
+    out: list[Business] = []
+    for category in CATEGORIES:
+        kwargs: dict[str, Any] = {
+            "IndexName": "GSI1",
+            "KeyConditionExpression": "GSI1PK = :p AND GSI1SK >= :s",
+            "ExpressionAttributeValues": {":p": f"CAT#{category}", ":s": f"BIZ#{since_iso}"},
+        }
+        while True:
+            r = _table().query(**kwargs)
+            out.extend(Business(**_from_item(i)) for i in r.get("Items", []))
+            if "LastEvaluatedKey" not in r:
+                break
+            kwargs["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+    return out
+
+
 # ----------------------------------------------------------------------- reviews
 def put_review(r: Review) -> None:
     sk = f"REV#{r.created_at}#{r.review_id}"
@@ -252,6 +273,47 @@ def list_reviews(business_id: str, limit: int = 100) -> list[Review]:
         Limit=limit,
     )
     return [Review(**_from_item(i)) for i in r.get("Items", [])]
+
+
+def list_reviews_between(business_id: str, since_iso: str, until_iso: str) -> list[Review]:
+    """One business's reviews with since <= created_at < until, newest first, all pages.
+
+    SK is REV#<created_at>#<review_id>; ISO timestamps sort chronologically as strings and the
+    "#" after the timestamp sorts below any digit, so a plain BETWEEN on the prefix is exact."""
+    out: list[Review] = []
+    kwargs: dict[str, Any] = {
+        "KeyConditionExpression": "PK = :p AND SK BETWEEN :lo AND :hi",
+        "ExpressionAttributeValues": {
+            ":p": f"BIZ#{business_id}",
+            ":lo": f"REV#{since_iso}",
+            ":hi": f"REV#{until_iso}",
+        },
+        "ScanIndexForward": False,
+    }
+    while True:
+        r = _table().query(**kwargs)
+        out.extend(Review(**_from_item(i)) for i in r.get("Items", []))
+        if "LastEvaluatedKey" not in r:
+            break
+        kwargs["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+    return [rv for rv in out if rv.created_at < until_iso]
+
+
+def scan_reviews_between(since_iso: str, until_iso: str) -> list[Review]:
+    """Fallback for callers with dynamodb:Scan (a developer profile): every review in the
+    window regardless of the business index. Reads the whole table."""
+    out: list[Review] = []
+    kwargs: dict[str, Any] = {
+        "FilterExpression": "begins_with(SK, :rev) AND created_at >= :lo AND created_at < :hi",
+        "ExpressionAttributeValues": {":rev": "REV#", ":lo": since_iso, ":hi": until_iso},
+    }
+    while True:
+        r = _table().scan(**kwargs)
+        out.extend(Review(**_from_item(i)) for i in r.get("Items", []))
+        if "LastEvaluatedKey" not in r:
+            break
+        kwargs["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+    return out
 
 
 def list_reviews_by_reviewer_since(

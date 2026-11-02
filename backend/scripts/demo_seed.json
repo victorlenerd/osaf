@@ -24,6 +24,7 @@
         {
           "reel_shortcode": "AFEFEDEMO01",
           "reviewer_display_name": "Tola",
+          "reviewer_country": "NG",
           "created_at": "2026-10-20T12:30:00Z",
           "business_name_as_said": "that amala place on Adelabu",
           "visit": {"when_text": "last Saturday afternoon", "where_text": "Adelabu Street, Surulere"},
@@ -39,6 +40,7 @@
         {
           "reel_shortcode": "AFEFEDEMO02",
           "reviewer_display_name": "Chidi",
+          "reviewer_country": "NG",
           "created_at": "2026-10-24T18:05:00Z",
           "business_name_as_said": "Amala Corner",
           "visit": {"when_text": "yesterday lunchtime", "where_text": "Surulere, near Adelabu junction"},
@@ -76,6 +78,7 @@
         {
           "reel_shortcode": "AFEFEDEMO03",
           "reviewer_display_name": "Wanjiru",
+          "reviewer_country": "KE",
           "created_at": "2026-10-22T20:15:00Z",
           "business_name_as_said": "Choma Point in Westlands",
           "visit": {"when_text": "Friday night", "where_text": "Woodvale Grove, Westlands"},
@@ -113,6 +116,7 @@
         {
           "reel_shortcode": "AFEFEDEMO04",
           "reviewer_display_name": "Kofi",
+          "reviewer_country": "GH",
           "created_at": "2026-10-18T10:40:00Z",
           "business_name_as_said": "Osu Fade",
           "visit": {"when_text": "Saturday morning", "where_text": "Oxford Street, Osu"},
@@ -128,6 +132,7 @@
         {
           "reel_shortcode": "AFEFEDEMO05",
           "reviewer_display_name": "Yaw",
+          "reviewer_country": "GH",
           "created_at": "2026-10-26T15:20:00Z",
           "business_name_as_said": "the fade spot on Oxford Street",
           "visit": {"when_text": "this afternoon", "where_text": "Osu"},
@@ -165,6 +170,7 @@
         {
           "reel_shortcode": "AFEFEDEMO06",
           "reviewer_display_name": "Aline",
+          "reviewer_country": "RW",
           "created_at": "2026-10-25T09:10:00Z",
           "business_name_as_said": "Coffee Lab in Kimironko",
           "visit": {"when_text": "this morning", "where_text": "KG 11 Avenue, Kimironko"},

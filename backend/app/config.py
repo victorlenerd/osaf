@@ -45,6 +45,16 @@ class Settings(BaseSettings):
 
     ig_cookies_b64: str = ""
 
+    # Public WhatsApp number in display form (e.g. "+234 800 000 0000"); used by the weekly
+    # Instagram highlights (CTA slide + caption). Optional: the copy degrades to "WhatsApp us".
+    whatsapp_public_number: str = ""
+    # Instagram Content Publishing (weekly highlights --publish). The IG professional account id
+    # and a token with instagram_content_publish. ig_api_base is graph.facebook.com for tokens
+    # from Facebook Login, graph.instagram.com for "Instagram API with Instagram Login" tokens.
+    ig_user_id: str = ""
+    ig_access_token: str = ""
+    ig_api_base: str = "https://graph.facebook.com"
+
     aws_region: str = "us-east-1"
     dynamo_table: str = "afefehub"
     media_bucket: str = "afefehub-media-prod"

@@ -48,6 +48,12 @@ All P0 code changes landed on 2026-10-31. Rollout order: `terraform apply` (new 
 - [ ] Pin `yt-dlp` in `pyproject.toml` (the unpinned `pip install -U yt-dlp` is gone from the Dockerfile) and pin the base image by digest. Let Dependabot bump them.
 - [ ] `claim_wa_message` dedupe items expire after 24 h; Meta retries for up to 7 days, so a retried message after a 24 h outage would be processed twice. Extend to 7 days.
 
+### Social publishing (weekly Instagram highlights)
+
+- [ ] One-time Meta setup: convert the Afefehub Instagram account to a professional account, link it to a Facebook Page, add the Instagram product to app 1440376624157026, grant `instagram_basic` + `instagram_content_publish` (+ `pages_show_list`, `pages_read_engagement`), read the IG user id from `GET /me/accounts?fields=instagram_business_account`, then `scripts/set_secrets.sh` for `IG_USER_ID` / `IG_ACCESS_TOKEN`. Verify with `weekly_highlights.py --preflight`.
+- [ ] **Token rotation.** A long-lived user token expires after 60 days and `--preflight` then fails with Graph error 190; a Business Manager system-user token does not expire and is the right long-term credential. Put a reminder on the calendar until that switch is made.
+- [ ] The first `--publish` goes out for real (the API cannot delete a post; remove a wrong one in the Instagram app). Run it at a quiet time, or point the IG settings at a throwaway professional account connected to the same app for the first run.
+
 ### Infrastructure
 
 - [x] TLS 1.2+ on ALB and CloudFront, HTTP→HTTPS redirect, `drop_invalid_header_fields`, ECS circuit breaker with rollback, ECR scan on push, remote state with versioning and lock.

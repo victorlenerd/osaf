@@ -115,6 +115,8 @@ variable "secret_names" {
     "META_APP_SECRET",
     "IG_COOKIES_B64",
     "PHONE_HASH_SALT",
+    "IG_USER_ID",
+    "IG_ACCESS_TOKEN",
   ]
 }
 
