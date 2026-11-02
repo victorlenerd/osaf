@@ -840,23 +840,93 @@ def test_delete_confirmation_erases_and_reports_reference(eraser):
     assert "Done ✅" in sent[-1][1] and "01REF" in sent[-1][1] and "2 reviews" in sent[-1][1]
 
 
-def test_delete_confirmation_requires_capitals_and_a_recent_request(eraser):
+def _minutes_ago(n: float) -> str:
     from datetime import UTC, datetime, timedelta
 
+    return (datetime.now(UTC) - timedelta(minutes=n)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_delete_confirmation_requires_capitals_and_a_recent_request(eraser):
     store, sent, events, erased = eraser
-    # no request at all: DELETE is just a word
+    # no request at all: DELETE explains the two-step flow instead of erasing
     runner.process_inbound(PHONE, _text("DELETE"), "Ada")
-    assert not erased and "Afefehub" in sent[-1][1]
-    # a request, then lowercase: not a confirmation
+    assert not erased and "first send *delete my data*" in sent[-1][1]
+    # a request, then lowercase: a withdrawal, not a confirmation
     runner.process_inbound(PHONE, _text("delete my data"), "Ada")
     runner.process_inbound(PHONE, _text("delete"), "Ada")
-    assert not erased
+    assert not erased and "nothing deleted" in sent[-1][1]
+    assert store.convs[PHONE].deletion_requested_at is None
     # a request that is too old
-    store.convs[PHONE].deletion_requested_at = (datetime.now(UTC) - timedelta(minutes=11)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    store.convs[PHONE].deletion_requested_at = _minutes_ago(11)
     runner.process_inbound(PHONE, _text("DELETE"), "Ada")
-    assert not erased and "Afefehub" in sent[-1][1]
+    assert not erased and "more than 10 minutes old" in sent[-1][1]
+    assert store.convs[PHONE].deletion_requested_at is None
+
+
+def _waiting_submission(store, question="Which Yaba?") -> Submission:
+    sub = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION,
+        pending_question=question,
+    )
+    store.subs["s1"] = sub
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    return sub
+
+
+def test_withdrawing_a_deletion_is_not_a_review_answer(eraser):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("no"), "Ada")
+    assert not erased and sub.qa_log == [] and not events
+    assert sub.state == SubmissionState.AWAITING_CLARIFICATION
+    assert "nothing deleted" in sent[-1][1] and "Which Yaba?" in sent[-1][1]
+    # with the request withdrawn, the next message is an ordinary answer again
+    runner.process_inbound(PHONE, _text("Ikeja"), "Ada")
+    assert sub.qa_log == [QA(q="Which Yaba?", a="Ikeja")]
+
+
+def test_expired_delete_is_not_a_correction(eraser):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store)
+    sub.state = SubmissionState.CONFIRMING
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    store.convs[PHONE].deletion_requested_at = _minutes_ago(11)
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and not events and sub.qa_log == []
+    assert sub.state == SubmissionState.CONFIRMING
+
+
+def test_new_reel_withdraws_deletion_and_is_processed(eraser):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text(REEL), "Ada")
+    assert not erased and events == ["pipeline:AbC123"]
+    assert "nothing deleted" in sent[-2][1]
+    assert store.convs[PHONE].deletion_requested_at is None
+
+
+def test_erasure_waits_for_a_running_pipeline(eraser):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store)
+    sub.state = SubmissionState.TRANSCRIBING  # a worker is on it right now
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    assert "still processing" in sent[-1][1]
+    assert store.convs[PHONE].deletion_requested_at is None and not erased
+    # a confirmation that lands while a stage is running is refused too
+    sub.state = SubmissionState.AWAITING_CLARIFICATION
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    sub.state = SubmissionState.EXTRACTING
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and "still processing" in sent[-1][1]
+    # a stale stage is a crashed one, not a running one: erasure proceeds
+    sub.state_updated_at = _minutes_ago(30)
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert erased == [PHONE]
 
 
 def test_delete_request_never_counts_as_a_review_answer(eraser):

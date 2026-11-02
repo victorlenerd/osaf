@@ -167,8 +167,33 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
     spoken = False
     active = _active(conv)
 
-    # 1. a new reel link always starts (or restarts) a submission
     found = extract_reel(text)
+
+    # 0. erasure, handled before anything else so none of these messages is ever read as a
+    #    review answer: "delete my data" asks for a confirmation, DELETE within the window
+    #    runs it, and any other reply while the question is open withdraws it.
+    if mtype == "text" and DELETE_WORDS.match(text):
+        _ask_to_confirm_deletion(conv, active)
+        return
+    if mtype == "text" and DELETE_CONFIRM.match(text):
+        _handle_delete_confirmation(conv, active)
+        return
+    if _deletion_pending(conv):
+        conv.deletion_requested_at = None
+        dynamo.put_conversation(conv)
+        if found or voice_id or mtype in ("video", "document"):
+            wa.send_text(phone, "Okay, nothing deleted. Carrying on with what you just sent.")
+        else:
+            body = "Okay, nothing deleted. Your data stays as it is."
+            if active and active.pending_question:
+                body += (
+                    "\n\nYour current review is still waiting for your reply 🙂\n\n"
+                    + active.pending_question
+                )
+            wa.send_text(phone, body)
+            return
+
+    # 1. a new reel link always starts (or restarts) a submission
     if found:
         url, shortcode = found
         if active and active.reel_shortcode == shortcode:
@@ -190,15 +215,6 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         dynamo.put_conversation(conv)
         wa.send_text(phone, "Got it! Downloading your reel and watching it now… 🎬")
         _run_pipeline(sub, conv)
-        return
-
-    # 1a. erasure: "delete my data" asks for a confirmation; DELETE within the window runs it.
-    #     Handled before everything else so neither message is ever read as a review answer.
-    if mtype == "text" and DELETE_WORDS.match(text):
-        _ask_to_confirm_deletion(conv)
-        return
-    if mtype == "text" and DELETE_CONFIRM.match(text) and _deletion_pending(conv):
-        _run_deletion(conv)
         return
 
     # 1b. "points": balance and slots, answered even mid-review so it never burns a clarification
@@ -341,7 +357,24 @@ def _deletion_pending(conv: Conversation) -> bool:
     return (datetime.now(UTC) - asked).total_seconds() <= DELETE_WINDOW_SECONDS
 
 
-def _ask_to_confirm_deletion(conv: Conversation) -> None:
+def _pipeline_busy(active: Submission | None) -> bool:
+    """True while a pipeline stage is actually running for this number in some worker. Erasing
+    under it would race: the stage would write the submission, media, review or points back
+    after we told the reviewer everything was gone. A stale stage is a crashed one, not a
+    running one."""
+    return active is not None and active.state in TRANSIENT_STATES and not _is_stale(active)
+
+
+BUSY_MSG = (
+    "I'm still processing your last review, so I can't erase your data this very moment "
+    "(it would come straight back). Give it a minute, then send *delete my data* again."
+)
+
+
+def _ask_to_confirm_deletion(conv: Conversation, active: Submission | None) -> None:
+    if _pipeline_busy(active):
+        wa.send_text(conv.phone, BUSY_MSG)
+        return
     p = erase.preview(conv.phone)
     reviews = f"{p.reviews} published review{'s' if p.reviews != 1 else ''}"
     pending = p.submissions - p.reviews
@@ -359,6 +392,30 @@ def _ask_to_confirm_deletion(conv: Conversation) -> None:
         "Only want one review taken down? Don't confirm; email privacy@afefehub.com with the "
         "business name instead.",
     )
+
+
+def _handle_delete_confirmation(conv: Conversation, active: Submission | None) -> None:
+    """The word DELETE on its own, whatever the state of the request."""
+    if not conv.deletion_requested_at:
+        wa.send_text(
+            conv.phone,
+            "To erase your data, first send *delete my data* so I can show you what would go; "
+            "then reply DELETE to confirm.",
+        )
+        return
+    if not _deletion_pending(conv):
+        conv.deletion_requested_at = None
+        dynamo.put_conversation(conv)
+        wa.send_text(
+            conv.phone,
+            f"That request is more than {DELETE_WINDOW_SECONDS // 60} minutes old, so nothing "
+            "was deleted. Send *delete my data* again to start over.",
+        )
+        return
+    if _pipeline_busy(active):
+        wa.send_text(conv.phone, BUSY_MSG)
+        return
+    _run_deletion(conv)
 
 
 def _run_deletion(conv: Conversation) -> None:
