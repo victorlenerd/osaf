@@ -114,13 +114,17 @@ will start):
 for name in MODEL_API_KEY GOOGLE_PLACES_API_KEY WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN META_APP_SECRET PHONE_HASH_SALT; do
   aws ssm put-parameter --name /afefehub/prod/$name --type SecureString --overwrite --value "$(read -rs "?$name: " v; echo "$v")"
 done
+# optional, only for publishing the weekly Instagram carousel (weekly_highlights.py --publish):
+for name in IG_USER_ID IG_ACCESS_TOKEN; do
+  aws ssm put-parameter --name /afefehub/prod/$name --type SecureString --overwrite --value "$(read -rs "?$name: " v; echo "$v")"
+done
 # optional, only if Instagram rate-limits anonymous yt-dlp downloads:
 aws ssm put-parameter --name /afefehub/prod/IG_COOKIES_B64 --type SecureString --overwrite --value "$(base64 -i cookies.txt)"
 ```
 
 The task reads them at start, so roll the service after changing one
-(`aws ecs update-service ... --force-new-deployment`). `IG_COOKIES_B64` is left
-as `CHANGEME` when unused; the backend treats that as unset.
+(`aws ecs update-service ... --force-new-deployment`). The optional ones (`IG_COOKIES_B64`, `IG_USER_ID`,
+`IG_ACCESS_TOKEN`) stay `CHANGEME` when unused; the backend treats that as unset.
 
 ## 7. Deploying the backend
 

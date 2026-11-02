@@ -134,6 +134,78 @@ def test_ask_user_returns_question_and_candidates():
     assert out.collected["_search_attempts"] == 1
 
 
+def test_ask_user_draft_is_carried_and_replayed():
+    """fields_so_far from one round is stored on the submission and shown to the next turn."""
+    draft = {
+        "business_name_as_said": "Mama Put",
+        "good": ["smoky jollof"],
+        "recommend": "yes",
+        "category": "restaurant",
+        "visit": {"when_text": "last Saturday", "when_iso": None},
+        "bogus": "dropped",
+        "improve": [],
+    }
+    chat = ScriptedChat(
+        [
+            reply(
+                tool_calls=[
+                    tool_call(
+                        "ask_user",
+                        {"question": "Which area?", "missing_fields": ["business"],
+                         "fields_so_far": draft},
+                    )
+                ]
+            )
+        ]
+    )  # fmt: skip
+    sub = _sub(collected={"language": "pcm", "_search_attempts": 1})
+    out = run_extraction_turn(sub, Conversation(phone="x"), None, chat=chat)
+    assert out.kind == "ask"
+    assert out.collected == {
+        "language": "pcm",  # earlier draft survives
+        "business_name_as_said": "Mama Put",
+        "good": ["smoky jollof"],
+        "recommend": "yes",
+        "category": "restaurant",
+        "visit": {"when_text": "last Saturday"},
+        "_search_attempts": 1,
+    }
+
+    # Next turn: the draft is in the prompt, the counter is not.
+    sub.collected = out.collected
+    sub.place_candidates = [MAMA_PUT]
+    chat2 = ScriptedChat([reply(tool_calls=[tool_call("finalize_review", FINAL_ARGS)])])
+    run_extraction_turn(
+        sub, Conversation(phone="x"), "2", chat=chat2, search_fn=lambda *a, **k: [MAMA_PUT]
+    )
+    ctx = json.loads(chat2.calls[0]["messages"][1]["content"])
+    assert ctx["draft_so_far"] == {
+        "language": "pcm",
+        "business_name_as_said": "Mama Put",
+        "good": ["smoky jollof"],
+        "recommend": "yes",
+        "category": "restaurant",
+        "visit": {"when_text": "last Saturday"},
+    }
+    assert "collected_fields_so_far" not in ctx
+
+
+def test_rejected_finalize_keeps_its_fields_as_draft():
+    """When finalize fails validation twice and we ask instead, the non-business fields stay."""
+    bad = {**FINAL_ARGS, "business": {**FINAL_ARGS["business"], "place_id": "ChIJinvented"}}
+    chat = ScriptedChat(
+        [
+            reply(tool_calls=[tool_call("finalize_review", bad)]),
+            reply(tool_calls=[tool_call("finalize_review", bad, "call_2")]),
+        ]
+    )
+    out = run_extraction_turn(_sub(), Conversation(phone="x"), None, chat=chat)
+    assert out.kind == "ask"
+    assert out.collected["good"] == ["jollof was smoky"]
+    assert out.collected["business_name_as_said"] == "Mama Put"
+    assert "business" not in out.collected  # the invalid place is not carried
+
+
 def test_round_cap_removes_ask_tool():
     chat = ScriptedChat([reply(content="REJECT: nothing about a business")])
     out = run_extraction_turn(

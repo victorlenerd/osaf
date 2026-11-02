@@ -50,6 +50,32 @@ SEARCH_PLACES = {
     },
 }
 
+# The draft the agent carries between clarification rounds. Same shape as finalize_review minus
+# the resolved business, so the next turn starts from these instead of re-reading the transcript.
+DRAFT_FIELDS = {
+    "business_name_as_said": {"type": "string"},
+    "business_place_id": {
+        "type": "string",
+        "description": "The search_places candidate you are leaning towards, if any",
+    },
+    "visit": {
+        "type": "object",
+        "properties": {
+            "when_text": {"type": "string"},
+            "when_iso": {"type": "string"},
+            "where_text": {"type": "string"},
+        },
+    },
+    "good": {"type": "array", "items": {"type": "string"}},
+    "improve": {"type": "array", "items": {"type": "string"}},
+    "recommend": {"type": "string", "enum": ["yes", "no", "maybe"]},
+    "category": {"type": "string", "enum": CATEGORIES},
+    "keywords": {"type": "array", "items": {"type": "string"}},
+    "overall_sentiment": {"type": "string", "enum": ["positive", "mixed", "negative"]},
+    "language": {"type": "string"},
+    "one_line_summary": {"type": "string", "maxLength": 160},
+}
+
 ASK_USER = {
     "type": "function",
     "function": {
@@ -58,7 +84,9 @@ ASK_USER = {
             "Send the reviewer ONE short WhatsApp message asking for what you cannot determine. "
             "Bundle all unknowns into a single question. When offering place candidates, number "
             "them (1, 2, 3) so the reviewer can answer with a number. Calling this ends your "
-            "turn; you will be re-invoked with the answer."
+            "turn; you will be re-invoked with the answer. Put everything you have already "
+            "settled from the transcript into fields_so_far: it is handed back to you next turn "
+            "so you only need to resolve the missing fields."
         ),
         "parameters": {
             "type": "object",
@@ -73,8 +101,13 @@ ASK_USER = {
                     "items": {"type": "string"},
                     "description": "place_ids in the order you numbered them, if any",
                 },
+                "fields_so_far": {
+                    "type": "object",
+                    "description": "Your draft of every field you can already fill",
+                    "properties": DRAFT_FIELDS,
+                },
             },
-            "required": ["question", "missing_fields"],
+            "required": ["question", "missing_fields", "fields_so_far"],
         },
     },
 }

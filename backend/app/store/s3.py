@@ -58,6 +58,15 @@ class Keys:
         safe = business_id.replace("/", "_")
         return f"businesses/{safe}/summary_history/{ts}.json"
 
+    # Weekly Instagram highlights: slides Meta fetches via presigned URL, plus the publish record.
+    @staticmethod
+    def social_slide(run_id: str, index: int) -> str:
+        return f"social/weekly/{run_id}/slide-{index:02d}.jpg"
+
+    @staticmethod
+    def social_record(run_id: str) -> str:
+        return f"social/weekly/{run_id}/published.json"
+
 
 def upload_file(path: Path, key: str, content_type: str | None = None) -> str:
     extra = {"ContentType": content_type} if content_type else {}

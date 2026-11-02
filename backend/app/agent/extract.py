@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.agent import places
 from app.agent.prompts import EXTRACTION_SYSTEM, build_extraction_context
-from app.agent.tools import ALL_TOOLS, TOOLS_NO_ASK
+from app.agent.tools import ALL_TOOLS, DRAFT_FIELDS, TOOLS_NO_ASK
 from app.config import get_settings
 from app.meta.client import get_meta
 from app.models import Conversation, PlaceCandidate, ReviewExtraction, Submission
@@ -46,6 +46,26 @@ ChatFn = Callable[..., Any]
 
 def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")[:40] or "unknown"
+
+
+def _draft(args: dict | None) -> dict:
+    """Keep only the draft keys the schema allows, with sane sizes; junk is dropped silently."""
+    out: dict = {}
+    for k, v in (args or {}).items():
+        if k not in DRAFT_FIELDS or v in (None, "", [], {}):
+            continue
+        if isinstance(v, str):
+            out[k] = v[:300]
+        elif isinstance(v, list):
+            out[k] = [str(x)[:120] for x in v if isinstance(x, str | int | float)][:10]
+        elif isinstance(v, dict):
+            out[k] = {a: str(b)[:200] for a, b in v.items() if isinstance(b, str) and b}
+    return out
+
+
+def _carry(sub: Submission, draft: dict, total_searches: int) -> dict:
+    """collected for the next turn: the previous draft overlaid with this turn's, plus counters."""
+    return {**(sub.collected or {}), **draft, "_search_attempts": total_searches}
 
 
 def run_extraction_turn(
@@ -187,7 +207,7 @@ def run_extraction_turn(
                     missing_fields=list(args.get("missing_fields") or []),
                     candidates_shown=[c.place_id for c in shown],
                     place_candidates=shown,
-                    collected={**(sub.collected or {}), "_search_attempts": total_searches},
+                    collected=_carry(sub, _draft(args.get("fields_so_far")), total_searches),
                     trace=trace,
                 )
 
@@ -196,17 +216,16 @@ def run_extraction_turn(
                 if problems:
                     if finalize_retry_used:
                         if rounds_left > 0:
-                            # Turn the validation problem into a question for the reviewer.
+                            # Turn the validation problem into a question for the reviewer. The
+                            # rejected finalize args are still a good draft of everything but
+                            # the business, so keep them for the next turn.
                             return ExtractionOutcome(
                                 kind="ask",
                                 question=_fallback_question(args, last_results),
                                 missing_fields=["business"],
                                 candidates_shown=[c.place_id for c in last_results[:3]],
                                 place_candidates=last_results[:3],
-                                collected={
-                                    **(sub.collected or {}),
-                                    "_search_attempts": total_searches,
-                                },
+                                collected=_carry(sub, _draft(args), total_searches),
                                 trace=trace,
                             )
                         return ExtractionOutcome(
@@ -225,7 +244,7 @@ def run_extraction_turn(
                 return ExtractionOutcome(
                     kind="final",
                     extraction=ext,
-                    collected={**(sub.collected or {}), "_search_attempts": total_searches},
+                    collected=_carry(sub, {}, total_searches),
                     trace=trace,
                 )
 

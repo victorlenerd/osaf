@@ -45,6 +45,16 @@ class Settings(BaseSettings):
 
     ig_cookies_b64: str = ""
 
+    # Public WhatsApp number in display form (e.g. "+234 800 000 0000"); used by the weekly
+    # Instagram highlights (CTA slide + caption). Optional: the copy degrades to "WhatsApp us".
+    whatsapp_public_number: str = ""
+    # Instagram Content Publishing (weekly highlights --publish). The IG professional account id
+    # and a token with instagram_content_publish. ig_api_base is graph.facebook.com for tokens
+    # from Facebook Login, graph.instagram.com for "Instagram API with Instagram Login" tokens.
+    ig_user_id: str = ""
+    ig_access_token: str = ""
+    ig_api_base: str = "https://graph.facebook.com"
+
     aws_region: str = "us-east-1"
     dynamo_table: str = "afefehub"
     media_bucket: str = "afefehub-media-prod"
@@ -59,6 +69,10 @@ class Settings(BaseSettings):
     dominant_speaker_threshold: float = 0.6
     stale_stage_seconds: int = 600
     max_voice_note_seconds: int = 600  # Muse Voice Transcribe file limit is 10 minutes
+    # A voice note sent while a submission waits on the reviewer is taken as the reply only if
+    # the submission asked recently and the note is short; otherwise it is a new voice review.
+    reply_window_seconds: int = 6 * 3600
+    max_voice_reply_seconds: int = 30
     weekly_review_limit: int = 3  # published reviews per reviewer in any rolling 7 days
     points_per_review: int = 10  # flat reward per published review
     # Reels longer or larger than this are refused before download (disk and model cost cap).

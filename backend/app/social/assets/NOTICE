@@ -1,0 +1,7 @@
+Third-party assets used by the weekly Instagram highlights renderer (app/social):
+
+- Lato (fonts/Lato-Regular.ttf, fonts/Lato-Bold.ttf) by Lukasz Dziedzic, SIL Open Font License 1.1.
+  See fonts/OFL.txt.
+- Country flags are Twemoji graphics (https://github.com/twitter/twemoji), fetched at run time
+  from jsDelivr and cached locally. Twemoji graphics are licensed CC-BY 4.0 by Twitter, Inc and
+  other contributors: https://creativecommons.org/licenses/by/4.0/
