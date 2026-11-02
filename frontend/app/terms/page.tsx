@@ -251,7 +251,8 @@ const sections: LegalSection[] = [
           phone number you submitted with, or by emailing <a href={`mailto:${LEGAL.privacyEmail}`}>{LEGAL.privacyEmail}</a> from an address you
           can verify. We will remove the review from the website and delete our stored copy of the video and audio within 30 days, keeping
           only what we must retain under section 12 of the Privacy Policy. Deleting or privatising the reel on Instagram does not by itself
-          notify us; please message us too.
+          notify us; please message us too. To erase everything we hold about you, including every review, text <em>delete my data</em> to
+          the {B} number and confirm; the steps are on our <Link href="/data-deletion">Delete your data</Link> page.
         </p>
         <p>
           <strong>By us.</strong> We may remove, hide, edit the metadata of, or refuse to publish any content at any time, with or without

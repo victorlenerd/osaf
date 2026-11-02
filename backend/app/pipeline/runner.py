@@ -29,7 +29,7 @@ from app.models import (
     now_iso,
 )
 from app.pii import phone_label
-from app.pipeline import publish, quota
+from app.pipeline import erase, publish, quota
 from app.pipeline.download import (
     DownloadError,
     download_reel,
@@ -61,7 +61,8 @@ def help_text() -> str:
         "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
         f"the business name and area clearly.\n\nYou can publish up to {s.weekly_review_limit} "
         f"reviews a week, and every published review earns {s.points_per_review} points. Text "
-        "*points* anytime to see your total."
+        "*points* anytime to see your total, or *delete my data* to erase everything I hold "
+        "about you."
     )
 
 
@@ -69,6 +70,15 @@ CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
 )
 POINTS_WORDS = re.compile(r"^\s*(my\s+)?(points|balance|score)\s*[?!.]*\s*$", re.I)
+# "delete my data", "erase my reviews", "remove my account", "delete everything", "forget me"
+DELETE_WORDS = re.compile(
+    r"^\s*((delete|erase|remove|wipe)\s+(all\s+)?(my\s+)?(data|account|reviews?|everything|info)"
+    r"|forget\s+me|delete\s+me)\b",
+    re.I,
+)
+# The confirmation is deliberately strict: the single word DELETE, in capitals.
+DELETE_CONFIRM = re.compile(r"^\s*DELETE\s*[.!]*\s*$")
+DELETE_WINDOW_SECONDS = 10 * 60
 LIMIT_MSG = (
     "You've published {limit} reviews this week, which is the most Afefehub takes from one "
     "person in 7 days 🙏 Your next slot opens {when}. Come back then with your next reel or "
@@ -180,6 +190,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         dynamo.put_conversation(conv)
         wa.send_text(phone, "Got it! Downloading your reel and watching it now… 🎬")
         _run_pipeline(sub, conv)
+        return
+
+    # 1a. erasure: "delete my data" asks for a confirmation; DELETE within the window runs it.
+    #     Handled before everything else so neither message is ever read as a review answer.
+    if mtype == "text" and DELETE_WORDS.match(text):
+        _ask_to_confirm_deletion(conv)
+        return
+    if mtype == "text" and DELETE_CONFIRM.match(text) and _deletion_pending(conv):
+        _run_deletion(conv)
         return
 
     # 1b. "points": balance and slots, answered even mid-review so it never burns a clarification
@@ -312,6 +331,56 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
 
     # 5. anything else
     wa.send_text(phone, help_text())
+
+
+# ----------------------------------------------------------------- erasure
+def _deletion_pending(conv: Conversation) -> bool:
+    if not conv.deletion_requested_at:
+        return False
+    asked = datetime.fromisoformat(conv.deletion_requested_at.replace("Z", "+00:00"))
+    return (datetime.now(UTC) - asked).total_seconds() <= DELETE_WINDOW_SECONDS
+
+
+def _ask_to_confirm_deletion(conv: Conversation) -> None:
+    p = erase.preview(conv.phone)
+    reviews = f"{p.reviews} published review{'s' if p.reviews != 1 else ''}"
+    pending = p.submissions - p.reviews
+    extra = f", {pending} other submission{'s' if pending != 1 else ''}" if pending > 0 else ""
+    conv.deletion_requested_at = now_iso()
+    dynamo.put_conversation(conv)
+    wa.send_text(
+        conv.phone,
+        "⚠️ This will permanently erase everything Afefehub holds about this number: "
+        f"{reviews}{extra}, our stored copies of your videos, voice notes and transcripts, "
+        f"your chat history and your {p.points} points. Your reviews disappear from "
+        "afefehub.com right away. This cannot be undone.\n\n"
+        f"Reply *DELETE* (in capitals) within {DELETE_WINDOW_SECONDS // 60} minutes to "
+        "confirm. Reply anything else, or nothing, to keep your data.\n\n"
+        "Only want one review taken down? Don't confirm; email privacy@afefehub.com with the "
+        "business name instead.",
+    )
+
+
+def _run_deletion(conv: Conversation) -> None:
+    wa.send_text(conv.phone, "Deleting now… this takes a moment.")
+    report = erase.erase_reviewer(conv.phone)
+    if report.clean:
+        wa.send_text(
+            conv.phone,
+            f"Done ✅ {report.reviews} review{'s' if report.reviews != 1 else ''} removed and "
+            "everything else erased. Afefehub no longer holds any data about this number; "
+            f"reference {report.reference}. Backups roll over within 35 days.\n\n"
+            "If you ever want to review again, just send a reel link or voice note. "
+            "Thank you for being part of Afefehub 🙏",
+        )
+    else:
+        log.error("erasure %s finished with errors: %s", report.reference, report.errors)
+        wa.send_text(
+            conv.phone,
+            f"Your reviews and chat history are gone, but a few stored files could not be "
+            f"removed automatically. We've logged it and will finish by hand; reference "
+            f"{report.reference}.",
+        )
 
 
 def _as_logged(text: str, spoken: bool) -> str:

@@ -31,7 +31,8 @@ Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/gl
    Instagram reel of you reviewing a place, **or just send a voice note** describing your visit.
    No app, no account. The agent transcribes it, asks at most three short questions if something
    is missing, shows you the structured review, and publishes it when you reply "OK".
-3. Text **points** to the same number to see your reviewer balance.
+3. Text **points** to the same number to see your reviewer balance, or **delete my data** to erase
+   everything Afefehub holds about you (confirm with **DELETE**; it is gone within a minute).
 
 The public API needs no key:
 
@@ -159,8 +160,15 @@ Afefehub has been live in production since 2026-10-29. What holds it up:
 - **Privacy by construction.** Reviews store an HMAC-SHA256 keyed hash of the reviewer's phone,
   never the number. A root-logger filter redacts anything shaped like a phone number; the verify
   token is scrubbed from access logs. The public API never returns the hash. Media under
-  `submissions/` expires after 30 days; submissions carry a 7-day TTL; logs are kept 14 days.
-  The site sets no cookies and runs no analytics.
+  `submissions/` expires after 30 days; submissions carry a 7-day TTL; conversations a 12-month
+  TTL; logs are kept 14 days. The site sets no cookies and runs no analytics.
+- **Self-service erasure.** A reviewer texts *delete my data* and confirms with *DELETE*; within a
+  minute every review, media file, transcript, agent trace, chat record and point tied to the
+  number is gone, affected businesses are rebuilt from the reviews that remain (counters, summary,
+  search document) and one left with no review is removed. Only a dated receipt with a keyed hash
+  is kept. Email requests run through `backend/scripts/delete_reviewer.py`. The public page is
+  [afefehub.com/data-deletion](https://afefehub.com/data-deletion), the URL Meta's App Dashboard
+  asks for under *User data deletion*.
 - **Hardened container.** Non-root user, read-only root filesystem with a single writable `/tmp`,
   all Linux capabilities dropped, 30 GiB bounded scratch disk. Reels over 15 minutes or 500 MB are
   refused before download; voice notes over 10 minutes are refused.
@@ -186,8 +194,8 @@ Afefehub has been live in production since 2026-10-29. What holds it up:
   point-in-time recovery, OpenSearch encrypted at rest and in transit, a `/healthz` probe, a
   per-turn agent trace in S3 for every submission.
 
-The honest list of what is still open (moderation queue, SQS worker, autoscaling, reviewer deletion
-script, staging environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md).
+The honest list of what is still open (moderation queue, SQS worker, autoscaling, staging
+environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md).
 
 ## Business model
 
@@ -270,6 +278,14 @@ Expose the webhook for WhatsApp during development with a tunnel (for example
 `cloudflared tunnel --url http://localhost:8000`) and register `https://<tunnel>/webhooks/whatsapp`
 with your `WHATSAPP_VERIFY_TOKEN` in the Meta app. From the repository root, `make test`, `make lint`
 and `make run` wrap the same commands.
+
+To erase a reviewer who asked by email rather than in the chat (the number is the WhatsApp
+`wa_id`: country code and digits), preview first, then run with `--yes` and send them the printed
+reference:
+
+```bash
+python scripts/delete_reviewer.py 2348012345678 --yes
+```
 
 ## Running the frontend locally
 

@@ -801,3 +801,80 @@ def test_business_endpoint_exposes_reviewer_country_not_hash(monkeypatch):
     assert by_id["r1"]["reviewer_country"] == "GH"
     assert by_id["r0"]["reviewer_country"] is None
     assert "reviewer_phone_hash" not in by_id["r1"]
+
+
+# ------------------------------------------------------------------ erasure over WhatsApp
+@pytest.fixture
+def eraser(world, monkeypatch):
+    """`world` plus a scripted erase module: preview counts and a recorded erase call."""
+    from app.pipeline import erase
+
+    erased: list[str] = []
+    preview = erase.ErasurePreview(reviews=2, submissions=3, points=20)
+    monkeypatch.setattr(runner.erase, "preview", lambda phone: preview)
+
+    def fake_erase(phone):
+        erased.append(phone)
+        return erase.ErasureReport(reference="01REF", reviews=2, submissions=3)
+
+    monkeypatch.setattr(runner.erase, "erase_reviewer", fake_erase)
+    return (*world, erased)
+
+
+def test_delete_request_asks_for_confirmation(eraser):
+    store, sent, events, erased = eraser
+    for phrase in ("delete my data", "Erase my reviews", "remove my account please", "forget me"):
+        runner.process_inbound(PHONE, _text(phrase), "Ada")
+        body = sent[-1][1]
+        assert "2 published reviews" in body and "1 other submission" in body
+        assert "20 points" in body
+        assert "Reply *DELETE*" in body
+    assert store.convs[PHONE].deletion_requested_at and not erased and not events
+
+
+def test_delete_confirmation_erases_and_reports_reference(eraser):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert erased == [PHONE]
+    assert "Done ✅" in sent[-1][1] and "01REF" in sent[-1][1] and "2 reviews" in sent[-1][1]
+
+
+def test_delete_confirmation_requires_capitals_and_a_recent_request(eraser):
+    from datetime import UTC, datetime, timedelta
+
+    store, sent, events, erased = eraser
+    # no request at all: DELETE is just a word
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and "Afefehub" in sent[-1][1]
+    # a request, then lowercase: not a confirmation
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("delete"), "Ada")
+    assert not erased
+    # a request that is too old
+    store.convs[PHONE].deletion_requested_at = (datetime.now(UTC) - timedelta(minutes=11)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and "Afefehub" in sent[-1][1]
+
+
+def test_delete_request_never_counts_as_a_review_answer(eraser):
+    store, sent, events, erased = eraser
+    store.subs["s1"] = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION,
+        pending_question="Which Yaba?",
+    )
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert store.subs["s1"].qa_log == [] and not events and erased == [PHONE]
+
+
+def test_help_mentions_deletion(world):
+    store, sent, events = world
+    runner.process_inbound(PHONE, _text("hi"), "Ada")
+    assert "delete my data" in sent[0][1]

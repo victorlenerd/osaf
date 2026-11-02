@@ -12,6 +12,8 @@ PK / SK layout
   BIZ#<id>            SUMMARY                    BusinessSummary
   GPLACE#<place_id>   SUMMARY                    GoogleReviewSummary (TTL; raw Google reviews
                                                  are never stored)
+  ERASURE#<ref>       META                       proof that a reviewer's data was erased
+                                                 (keyed hash + counts, TTL 12 months)
 """
 
 from __future__ import annotations
@@ -69,8 +71,12 @@ def get_conversation(phone: str) -> Conversation | None:
     return Conversation(**_from_item(r["Item"])) if "Item" in r else None
 
 
+CONVERSATION_TTL_SECONDS = 365 * 86400  # privacy policy: 12 months after the last message
+
+
 def put_conversation(c: Conversation) -> None:
     c.updated_at = now_iso()
+    c.expires_at = int(time.time()) + CONVERSATION_TTL_SECONDS
     _table().put_item(Item={"PK": f"CONV#{c.phone}", "SK": "META", **_to_item(c)})
 
 
@@ -103,6 +109,23 @@ def list_submissions_for_phone(phone: str, limit: int = 20) -> list[Submission]:
         Limit=limit,
     )
     return [Submission(**_from_item(i)) for i in r.get("Items", [])]
+
+
+def list_all_submissions_for_phone(phone: str) -> list[Submission]:
+    """Every submission this number ever made (all pages), for erasure."""
+    out: list[Submission] = []
+    kwargs: dict[str, Any] = {
+        "IndexName": "GSI1",
+        "KeyConditionExpression": "GSI1PK = :p AND begins_with(GSI1SK, :s)",
+        "ExpressionAttributeValues": {":p": f"CONV#{phone}", ":s": "SUB#"},
+    }
+    while True:
+        r = _table().query(**kwargs)
+        out.extend(Submission(**_from_item(i)) for i in r.get("Items", []))
+        if "LastEvaluatedKey" not in r:
+            break
+        kwargs["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+    return out
 
 
 # -------------------------------------------------------------- idempotency locks
@@ -330,6 +353,23 @@ def list_reviews_by_reviewer_since(
     return [Review(**_from_item(i)) for i in r.get("Items", [])]
 
 
+def list_all_reviews_by_reviewer(reviewer_hash: str) -> list[Review]:
+    """Every review one person ever published (all pages), for erasure."""
+    out: list[Review] = []
+    kwargs: dict[str, Any] = {
+        "IndexName": "GSI1",
+        "KeyConditionExpression": "GSI1PK = :p AND begins_with(GSI1SK, :s)",
+        "ExpressionAttributeValues": {":p": f"REVIEWER#{reviewer_hash}", ":s": "REV#"},
+    }
+    while True:
+        r = _table().query(**kwargs)
+        out.extend(Review(**_from_item(i)) for i in r.get("Items", []))
+        if "LastEvaluatedKey" not in r:
+            break
+        kwargs["ExclusiveStartKey"] = r["LastEvaluatedKey"]
+    return out
+
+
 # ------------------------------------------------------------------------ points
 def add_points(phone: str, n: int) -> int:
     """Atomically add `n` to a reviewer's balance (own item, so no read-modify-write race)."""
@@ -376,6 +416,69 @@ def put_google_summary(place_id: str, s: GoogleReviewSummary) -> None:
 
 
 # ------------------------------------------------------------------- maintenance
+def _delete(pk: str, sk: str) -> None:
+    _table().delete_item(Key={"PK": pk, "SK": sk})
+
+
+def delete_conversation(phone: str) -> None:
+    """The conversation record and the points balance of one number."""
+    _delete(f"CONV#{phone}", "META")
+    _delete(f"CONV#{phone}", "POINTS")
+
+
+def delete_submission(submission_id: str) -> None:
+    _delete(f"SUB#{submission_id}", "META")
+
+
+def delete_reel_claim(shortcode: str) -> None:
+    """Free the one-review-per-reel lock so the reel could be reviewed again after erasure."""
+    _delete(f"REEL#{shortcode}", "META")
+
+
+def delete_review(r: Review) -> None:
+    """The review item under its business and the by-id pointer. Business counters are not
+    touched here; call rebuild_business_counters afterwards."""
+    _delete(f"BIZ#{r.business_id}", f"REV#{r.created_at}#{r.review_id}")
+    _delete(f"REVIEW#{r.review_id}", "META")
+
+
+def rebuild_business_counters(business_id: str) -> Business | None:
+    """Recompute review_count, recommend_counts, keywords and names_as_said from the reviews
+    still stored under the business. Returns None when no review is left (the caller should
+    then delete the business)."""
+    reviews = list_reviews(business_id, limit=1000)
+    if not reviews:
+        return None
+    recommend = {"yes": 0, "no": 0, "maybe": 0}
+    keywords: dict[str, int] = {}
+    names: list[str] = []
+    for r in reviews:
+        ext = r.extraction
+        recommend[ext.recommend] = recommend.get(ext.recommend, 0) + 1
+        for kw in dict.fromkeys(k.strip().lower() for k in ext.keywords if k.strip()):
+            keywords[kw] = keywords.get(kw, 0) + 1
+        if ext.business_name_as_said and ext.business_name_as_said not in names:
+            names.append(ext.business_name_as_said)
+    _table().update_item(
+        Key={"PK": f"BIZ#{business_id}", "SK": "META"},
+        # updated_at and GSI1SK are left alone: they mean "last reviewed", not "last changed".
+        UpdateExpression=(
+            "SET review_count = :n, recommend_counts = :rc, keywords = :kw, names_as_said = :names"
+        ),
+        ExpressionAttributeValues={
+            ":n": len(reviews),
+            ":rc": recommend,
+            ":kw": keywords,
+            ":names": names,
+        },
+    )
+    return get_business(business_id)
+
+
+def put_erasure_receipt(reference: str, record: dict) -> None:
+    _table().put_item(Item={"PK": f"ERASURE#{reference}", "SK": "META", **record})
+
+
 def delete_business(business_id: str) -> int:
     """Remove a business and everything under its partition (reviews, summary). Returns count."""
     pk = f"BIZ#{business_id}"

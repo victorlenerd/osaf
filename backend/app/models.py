@@ -228,7 +228,12 @@ class Conversation(BaseModel):
     profile_country: str | None = None
     profile_city: str | None = None
     display_name: str | None = None
+    # Set when the reviewer texts "delete my data"; the erasure runs once they reply DELETE
+    # within the confirmation window (app/pipeline/erase.py).
+    deletion_requested_at: str | None = None
     updated_at: str = Field(default_factory=now_iso)
+    # DynamoDB TTL: conversations are kept 12 months after the last message (privacy policy).
+    expires_at: int | None = None
 
 
 class BusinessSummary(BaseModel):
