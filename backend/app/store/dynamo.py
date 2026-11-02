@@ -80,6 +80,20 @@ def put_conversation(c: Conversation) -> None:
     _table().put_item(Item={"PK": f"CONV#{c.phone}", "SK": "META", **_to_item(c)})
 
 
+def clear_deletion_request(phone: str) -> None:
+    """Withdraw a pending "delete my data" request in place. Conditional on the item still
+    existing, so a withdrawal that races an erasure can never resurrect the conversation."""
+    try:
+        _table().update_item(
+            Key={"PK": f"CONV#{phone}", "SK": "META"},
+            UpdateExpression="REMOVE deletion_requested_at",
+            ConditionExpression="attribute_exists(PK)",
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+
+
 # -------------------------------------------------------------------- submissions
 def get_submission(sid: str) -> Submission | None:
     r = _table().get_item(Key={"PK": f"SUB#{sid}", "SK": "META"})

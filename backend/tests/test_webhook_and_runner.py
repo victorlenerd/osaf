@@ -111,6 +111,10 @@ class FakeStore:
         self.points[phone] = self.points.get(phone, 0) + n
         return self.points[phone]
 
+    def clear_deletion_request(self, phone):
+        if phone in self.convs:  # conditional on the item existing, like the real one
+            self.convs[phone].deletion_requested_at = None
+
     def get_points(self, phone):
         return self.points.get(phone, 0)
 
@@ -908,6 +912,73 @@ def test_new_reel_withdraws_deletion_and_is_processed(eraser):
     assert not erased and events == ["pipeline:AbC123"]
     assert "nothing deleted" in sent[-2][1]
     assert store.convs[PHONE].deletion_requested_at is None
+
+
+def test_messages_during_an_erasure_are_held_off(eraser):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    conv = store.convs[PHONE]
+    # the marker goes down before the erasure starts, and the request is no longer pending
+    assert conv.erasure_started_at and conv.deletion_requested_at is None
+    # the erasure is still running (the fake left the conversation in place): nothing written
+    before = (dict(store.convs), dict(store.subs))
+    for msg in (_text("hello?"), _text("no"), _text(REEL)):
+        runner.process_inbound(PHONE, msg, "Ada")
+        assert "in progress" in sent[-1][1]
+    assert (dict(store.convs), dict(store.subs)) == before and not events
+    assert erased == [PHONE]
+    # a marker older than the bound does not lock the number out
+    conv.erasure_started_at = _minutes_ago(16)
+    runner.process_inbound(PHONE, _text("hello?"), "Ada")
+    assert "Afefehub" in sent[-1][1]
+
+
+def test_withdrawal_never_recreates_a_deleted_conversation(monkeypatch):
+    """A withdrawal that read the conversation just before an erasure removed it must not
+    write the item back: the store clears the request with a conditional in-place update
+    and treats "item gone" as success."""
+    from botocore.exceptions import ClientError
+
+    from app.store import dynamo
+
+    calls: list[dict] = []
+
+    class T:
+        def update_item(self, **kw):
+            calls.append(kw)
+            raise ClientError(
+                {"Error": {"Code": "ConditionalCheckFailedException", "Message": "gone"}},
+                "UpdateItem",
+            )
+
+        def put_item(self, **kw):
+            raise AssertionError("a withdrawal must never put the conversation item")
+
+    monkeypatch.setattr(dynamo, "_table", lambda: T())
+    dynamo.clear_deletion_request(PHONE)  # no exception
+    kw = calls[0]
+    assert kw["ConditionExpression"] == "attribute_exists(PK)"
+    assert kw["UpdateExpression"].startswith("REMOVE deletion_requested_at")
+    assert kw["Key"] == {"PK": f"CONV#{PHONE}", "SK": "META"}
+
+
+def test_video_only_counts_as_content_when_one_is_awaited(eraser, monkeypatch):
+    store, sent, events, erased = eraser
+    video = {"type": "video", "video": {"id": "v1"}}
+    # nothing waiting for a file: the video is just a withdrawal, no false promise
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, video, "Ada")
+    assert "Carrying on" not in sent[-1][1] and "nothing deleted" in sent[-1][1]
+    # a submission waiting for the file: withdraw and continue with it
+    sub = _waiting_submission(store)
+    sub.state = SubmissionState.AWAITING_VIDEO
+    monkeypatch.setattr(runner.wa, "download_media", lambda media_id, dest: dest)
+    monkeypatch.setattr(runner, "extract_audio", lambda src, dst: dst)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, video, "Ada")
+    assert any("Carrying on" in b for _, b in sent[-3:])
+    assert events[-1] == "pipeline:sc" and not erased
 
 
 def test_erasure_waits_for_a_running_pipeline(eraser):

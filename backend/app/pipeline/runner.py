@@ -171,7 +171,11 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
 
     # 0. erasure, handled before anything else so none of these messages is ever read as a
     #    review answer: "delete my data" asks for a confirmation, DELETE within the window
-    #    runs it, and any other reply while the question is open withdraws it.
+    #    runs it, and any other reply while the question is open withdraws it. While an
+    #    erasure is running nothing is written at all, or it would come back afterwards.
+    if _erasure_in_progress(conv):
+        wa.send_text(phone, ERASING_MSG)
+        return
     if mtype == "text" and DELETE_WORDS.match(text):
         _ask_to_confirm_deletion(conv, active)
         return
@@ -180,8 +184,13 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         return
     if _deletion_pending(conv):
         conv.deletion_requested_at = None
-        dynamo.put_conversation(conv)
-        if found or voice_id or mtype in ("video", "document"):
+        dynamo.clear_deletion_request(phone)
+        awaited_file = (
+            mtype in ("video", "document")
+            and active is not None
+            and active.state == SubmissionState.AWAITING_VIDEO
+        )
+        if found or voice_id or awaited_file:
             wa.send_text(phone, "Okay, nothing deleted. Carrying on with what you just sent.")
         else:
             body = "Okay, nothing deleted. Your data stays as it is."
@@ -350,11 +359,28 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
 
 
 # ----------------------------------------------------------------- erasure
+def _seconds_since(iso: str) -> float:
+    return (datetime.now(UTC) - datetime.fromisoformat(iso.replace("Z", "+00:00"))).total_seconds()
+
+
 def _deletion_pending(conv: Conversation) -> bool:
     if not conv.deletion_requested_at:
         return False
-    asked = datetime.fromisoformat(conv.deletion_requested_at.replace("Z", "+00:00"))
-    return (datetime.now(UTC) - asked).total_seconds() <= DELETE_WINDOW_SECONDS
+    return _seconds_since(conv.deletion_requested_at) <= DELETE_WINDOW_SECONDS
+
+
+def _erasure_in_progress(conv: Conversation) -> bool:
+    """True from the confirmation until the conversation item itself is deleted (which takes
+    the marker with it). Bounded so a crashed erasure does not lock the number out."""
+    if not conv.erasure_started_at:
+        return False
+    return _seconds_since(conv.erasure_started_at) <= ERASURE_MAX_SECONDS
+
+
+ERASURE_MAX_SECONDS = 15 * 60
+ERASING_MSG = (
+    "Your data deletion is in progress, hang on a moment… I'll confirm here when it's done."
+)
 
 
 def _pipeline_busy(active: Submission | None) -> bool:
@@ -405,7 +431,7 @@ def _handle_delete_confirmation(conv: Conversation, active: Submission | None) -
         return
     if not _deletion_pending(conv):
         conv.deletion_requested_at = None
-        dynamo.put_conversation(conv)
+        dynamo.clear_deletion_request(conv.phone)
         wa.send_text(
             conv.phone,
             f"That request is more than {DELETE_WINDOW_SECONDS // 60} minutes old, so nothing "
@@ -419,6 +445,11 @@ def _handle_delete_confirmation(conv: Conversation, active: Submission | None) -
 
 
 def _run_deletion(conv: Conversation) -> None:
+    # Mark the erasure before starting it: from here on, inbound messages are held off (see
+    # step 0) instead of being read as withdrawals or starting work that would outlive it.
+    conv.deletion_requested_at = None
+    conv.erasure_started_at = now_iso()
+    dynamo.put_conversation(conv)
     wa.send_text(conv.phone, "Deleting now… this takes a moment.")
     report = erase.erase_reviewer(conv.phone)
     if report.clean:
