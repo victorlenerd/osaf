@@ -68,10 +68,11 @@ INDEX_BODY = {
 @lru_cache
 def client() -> OpenSearch:
     s = get_settings()
+    # The client is cached for the life of the process, so the signer must read the
+    # credentials object on every request: on Fargate the task role's temporary token
+    # rotates, and a copy of the key/secret/token taken at startup expires within hours.
     creds = boto3.Session(region_name=s.aws_region).get_credentials()
-    auth = AWS4Auth(
-        creds.access_key, creds.secret_key, s.aws_region, "es", session_token=creds.token
-    )
+    auth = AWS4Auth(refreshable_credentials=creds, region=s.aws_region, service="es")
     return OpenSearch(
         hosts=[{"host": s.opensearch_endpoint, "port": 443}],
         http_auth=auth,
