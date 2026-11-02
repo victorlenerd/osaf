@@ -76,6 +76,7 @@ unstructured speech into a searchable record that works for businesses Google ha
 | **Search** | Typeahead over business names *and the names reviewers actually said*, keywords, address and city, with fuzzy matching and a boost for well-reviewed, well-recommended businesses. Filter by 13 countries and 20 categories. |
 | **Google fallback** | Empty result? One tap checks Google Places and shows the listing with an AI summary of up to five live Google reviews (attributed, never stored). |
 | **Reviewer rewards** | 10 points per published review, glowing or grumpy; 100 points earns a US$10 Amazon gift card. Capped at 3 reviews per reviewer per rolling week. A thank-you, never payment for a particular opinion. |
+| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag, and a how-to-submit closer. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
 
 <p align="center">
   <img src="docs/images/business.png" alt="Business page with the AI summary, recommend meter and reel and voice reviews" width="48%">
@@ -92,6 +93,7 @@ One API key, one base URL (`https://api.meta.ai/v1`), one client (`backend/app/m
 | Verify | `sam-3.1` | Text-prompted detection and tracking of *"a person's face"* across the reel. The clip is re-encoded at about 2 fps to stay inside SAM's 50–1500 frame window. **Pass rule:** a confident face track in at least 50% of frames **and** one diarized speaker holding at least 60% of the speech. Screen recordings, slideshows and voice-overs fail. Reels only; voice notes skip this step and are badged. |
 | Understand | `muse-spark-1.3` | A tool-calling agent with four tools: `search_places` (Google Places API New), `ask_user`, `finalize_review` and `reject_review`. It resolves the business, extracts visit time and place, what was good, what to improve, recommend yes/no/maybe, category and keywords, and asks the reviewer on WhatsApp only when the recording is not enough. |
 | Summarize | `muse-spark-1.3` | JSON-mode summaries for each business and for Google-only listings, with `reasoning_effort="minimal"`. Measured on this task: default reasoning spent about 5k tokens and 35 s; minimal takes about 5 s with the same quality. |
+| Pick | `muse-spark-1.3` | JSON-mode ranking of the week's published reviews for the Instagram carousel: one per business, spread across countries and categories, at most one critical review, a reason per pick and a hook line. Every returned id is checked against the candidate set, and a deterministic heuristic fills gaps or takes over if the model fails. |
 
 **Agent guardrails, enforced in code rather than in the prompt** (`backend/app/agent/extract.py`):
 
@@ -218,13 +220,15 @@ site.
 - Business claiming and replies.
 - Keep the "send the file on WhatsApp" fallback first-class, since Instagram downloads can break.
 - Staging environment and deploys from GitHub Actions with OIDC.
+- Schedule the weekly Instagram carousel (EventBridge Scheduler -> ECS RunTask) once a few manual
+  runs have gone well; today it is a dry run by default and publishes only on a typed confirmation.
 
 ## Repository
 
 | Path | What |
 |---|---|
 | `backend/` | FastAPI service: WhatsApp webhook, pipeline, Muse Spark agent, public API, tests |
-| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `create_index.py` |
+| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py` |
 | `frontend/` | Next.js static site (search, business pages, about, terms, privacy) and a zero-dependency mock API |
 | `infra/terraform/` | AWS: Route53, ACM, S3 + CloudFront, ECS Fargate + ALB, DynamoDB, OpenSearch, ECR, SSM, WAF |
 | `scripts/` | `deploy_backend.sh` (build, push by git SHA, roll ECS), `set_secrets.sh` (SSM secrets) |
