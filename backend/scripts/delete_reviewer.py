@@ -3,10 +3,17 @@ email rather than through the "delete my data" chat command.
 
     python scripts/delete_reviewer.py 2348012345678          # show what would be removed
     python scripts/delete_reviewer.py 2348012345678 --yes    # remove it
+    python scripts/delete_reviewer.py --rebuild BIZ [BIZ…]   # finish a rebuild that failed
 
 The number is the WhatsApp wa_id: country code and digits, no "+" or spaces (a "+" or spaces
 are stripped). Runs with the same AWS credentials and .env the backend uses. Give the
 reviewer the printed reference; it is also stored as an ERASURE#<ref> receipt in DynamoDB.
+
+When an erasure reports a FAILED business, its reviews are already gone but its counters,
+summary and search document still reflect them. The reviewer's conversation (and with it the
+list of businesses to rebuild) is deleted at the end of the run, so re-running the erasure
+will not pick it up: pass the ids from the FAILED lines (also under `businesses_failed` on the
+receipt) to --rebuild instead.
 """
 
 from __future__ import annotations
@@ -26,9 +33,22 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("phone", help="WhatsApp number as a wa_id, e.g. 2348012345678")
+    ap.add_argument("phone", nargs="?", help="WhatsApp number as a wa_id, e.g. 2348012345678")
     ap.add_argument("--yes", action="store_true", help="actually erase (default: preview only)")
+    ap.add_argument(
+        "--rebuild",
+        nargs="+",
+        metavar="BIZ",
+        help="rebuild these business ids from their remaining reviews and exit",
+    )
     args = ap.parse_args()
+
+    if args.rebuild:
+        if args.phone:
+            ap.error("--rebuild takes business ids only, not a phone number")
+        return _print_report(erase.rebuild_businesses(args.rebuild), erased=False)
+    if not args.phone:
+        ap.error("a phone number is required unless --rebuild is given")
 
     phone = re.sub(r"[^\d]", "", args.phone)
     if not 7 <= len(phone) <= 15:
@@ -44,20 +64,28 @@ def main() -> int:
         print("preview only; re-run with --yes to erase")
         return 0
 
-    report = erase.erase_reviewer(phone)
-    print(
-        f"erased: {report.reviews} reviews, {report.submissions} submissions, "
-        f"{report.objects} S3 objects, {report.points_forfeited} points"
-    )
+    return _print_report(erase.erase_reviewer(phone), erased=True)
+
+
+def _print_report(report: erase.ErasureReport, *, erased: bool) -> int:
+    if erased:
+        print(
+            f"erased: {report.reviews} reviews, {report.submissions} submissions, "
+            f"{report.objects} S3 objects, {report.points_forfeited} points"
+        )
     for bid in report.businesses_rebuilt:
         print(f"  rebuilt  {bid}")
     for bid in report.businesses_removed:
         print(f"  removed  {bid}")
-    for bid in report.businesses_failed:
-        print(f"  FAILED   {bid}  (re-run with --yes to retry the rebuild)", file=sys.stderr)
+    if report.businesses_failed:
+        ids = " ".join(report.businesses_failed)
+        for bid in report.businesses_failed:
+            print(f"  FAILED   {bid}", file=sys.stderr)
+        print(f"  retry the rebuild with: --rebuild {ids}", file=sys.stderr)
     for err in report.errors:
         print(f"  ERROR    {err}", file=sys.stderr)
-    print(f"reference: {report.reference}")
+    if erased:
+        print(f"reference: {report.reference}")
     return 1 if report.errors else 0
 
 

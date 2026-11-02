@@ -221,6 +221,20 @@ def test_retry_after_a_failed_run_still_rebuilds_the_businesses(monkeypatch):
     assert db.summaries["shared"].review_count == 1
 
 
+def test_rebuild_businesses_finishes_a_failed_rebuild_without_the_conversation(monkeypatch):
+    """After the conversation is gone, the receipt's businesses_failed ids are all that is
+    left; the operator passes them to rebuild_businesses (scripts/delete_reviewer.py
+    --rebuild) and the stale aggregates are fixed."""
+    db, s3, search = _world(monkeypatch)
+    db.reviews = [r for r in db.reviews if r.reviewer_phone_hash != phone_hash(ADA)]
+    db.convs.discard(ADA)  # the earlier run deleted the conversation at the end
+    report = erase.rebuild_businesses(["shared", "solo"])
+    assert report.clean
+    assert report.businesses_rebuilt == ["shared"] and report.businesses_removed == ["solo"]
+    assert search.upserted == ["shared"] and search.deleted == ["solo"]
+    assert db.summaries["shared"].review_count == 1 and "solo" in db.deleted_businesses
+
+
 def test_failed_rebuild_is_named_on_the_receipt(monkeypatch):
     db, s3, search = _world(monkeypatch)
 

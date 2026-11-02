@@ -107,13 +107,7 @@ def erase_reviewer(phone: str) -> ErasureReport:
         report.submissions += 1
 
     # 3. businesses: rebuild from what remains, or remove when nothing does
-    for business_id in touched:
-        try:
-            _rebuild_business(report, business_id)
-        except Exception as e:  # noqa: BLE001
-            log.exception("could not rebuild %s after erasing %s", business_id, label)
-            report.businesses_failed.append(business_id)
-            report.errors.append(f"business {business_id}: {e!r}")
+    rebuild_businesses(list(touched), report)
 
     # 4. the number itself
     dynamo.delete_conversation(phone)
@@ -128,6 +122,23 @@ def erase_reviewer(phone: str) -> ErasureReport:
         len(report.businesses_rebuilt),
         len(report.businesses_removed),
     )
+    return report
+
+
+def rebuild_businesses(
+    business_ids: list[str], report: ErasureReport | None = None
+) -> ErasureReport:
+    """Rebuild (or remove) each business from the reviews it still has. Also the operator's
+    retry for a business named under `businesses_failed` on an erasure receipt: once the
+    conversation is gone, the receipt is the only place those ids survive."""
+    report = report or ErasureReport(reference=str(ULID()))
+    for business_id in business_ids:
+        try:
+            _rebuild_business(report, business_id)
+        except Exception as e:  # noqa: BLE001
+            log.exception("could not rebuild %s", business_id)
+            report.businesses_failed.append(business_id)
+            report.errors.append(f"business {business_id}: {e!r}")
     return report
 
 
