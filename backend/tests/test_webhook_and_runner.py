@@ -466,6 +466,7 @@ def voice(world, monkeypatch):
     heard = {"text": "Ikeja, the one on Allen Avenue"}
     monkeypatch.setattr(get_settings(), "model_api_key", "k")  # transcription needs the key
     monkeypatch.setattr(runner, "fetch_voice_note", lambda media_id, work: work / "voice.ogg")
+    monkeypatch.setattr(runner, "audio_duration", lambda path: heard.get("seconds", 5))
     monkeypatch.setattr(
         runner,
         "transcribe_voice_note",
@@ -537,6 +538,76 @@ def test_empty_voice_answer_asks_to_type(voice):
     assert not events
     assert store.subs["s1"].state == SubmissionState.AWAITING_CLARIFICATION
     assert "couldn't make out" in sent[-1][1]
+
+
+def _hours_ago(hours: float) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _waiting_reel(store, phone: str, state: SubmissionState, **kw) -> Submission:
+    sub = Submission(
+        submission_id="s1", phone=phone, reel_url="u", reel_shortcode="sc", state=state,
+        pending_question="Here's what I got", **kw,
+    )  # fmt: skip
+    store.subs["s1"] = sub
+    store.convs[phone] = Conversation(phone=phone, active_submission_id="s1")
+    return sub
+
+
+def test_long_voice_note_while_confirming_is_a_new_review(voice):
+    """A full spoken review must not be published under the reel that was waiting for an OK."""
+    store, sent, events, heard = voice
+    phone = "2348012345678"
+    _waiting_reel(store, phone, SubmissionState.CONFIRMING)
+    heard["seconds"] = 95
+    heard["text"] = "Okay so I went to Mama Put in Yaba last week and the jollof was amazing..."
+    runner.process_inbound(phone, _audio("m8"))
+    assert store.subs["s1"].state == SubmissionState.ABANDONED
+    assert store.subs["s1"].qa_log == []
+    new = store.subs[store.convs[phone].active_submission_id]
+    assert new.kind == "voice" and new.wa_media_id == "m8" and new.reel_url is None
+    assert events == ["pipeline:None"]
+    assert "full review" in sent[0][1] and not any("Listening" in b for _, b in sent)
+
+
+def test_short_voice_note_while_confirming_is_still_a_reply(voice):
+    store, sent, events, heard = voice
+    phone = "2348012345678"
+    _waiting_reel(store, phone, SubmissionState.AWAITING_CLARIFICATION)
+    heard["seconds"] = 29
+    runner.process_inbound(phone, _audio())
+    assert store.subs["s1"].state != SubmissionState.ABANDONED
+    assert events == ["extract:Ikeja, the one on Allen Avenue"]
+
+
+def test_voice_note_after_reply_window_is_a_new_review(voice, monkeypatch):
+    """A reel left waiting since yesterday does not capture today's voice note."""
+    store, sent, events, heard = voice
+    phone = "2348012345678"
+    _waiting_reel(
+        store, phone, SubmissionState.AWAITING_CLARIFICATION, state_updated_at=_hours_ago(7)
+    )
+    monkeypatch.setattr(
+        runner, "fetch_voice_note", lambda *a: (_ for _ in ()).throw(AssertionError("fetched"))
+    )
+    runner.process_inbound(phone, _audio("m9"))
+    assert store.subs["s1"].state == SubmissionState.ABANDONED
+    new = store.subs[store.convs[phone].active_submission_id]
+    assert new.kind == "voice" and new.wa_media_id == "m9"
+    assert events == ["pipeline:None"]
+    assert "waiting a while" in sent[0][1]
+
+
+def test_voice_note_within_reply_window_is_a_reply(voice):
+    store, sent, events, heard = voice
+    phone = "2348012345678"
+    _waiting_reel(
+        store, phone, SubmissionState.AWAITING_CLARIFICATION, state_updated_at=_hours_ago(5)
+    )
+    runner.process_inbound(phone, _audio())
+    assert events == ["extract:Ikeja, the one on Allen Avenue"]
 
 
 def test_voice_note_without_submission_starts_voice_review(voice):

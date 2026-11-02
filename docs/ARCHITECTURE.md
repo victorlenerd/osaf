@@ -26,9 +26,13 @@ history that an AI keeps summarized.
     a failed download goes to AWAITING_VIDEO and the reviewer can send the file on WhatsApp)
 
    Voice notes: a WhatsApp `audio` message while a submission waits on the reviewer
-   (AWAITING_CLARIFICATION / CONFIRMING) is transcribed and handled like a typed answer.
-   Any other voice note starts a `kind="voice"` submission that follows the same machine
-   but skips VERIFYING: NEW → DOWNLOADING (fetch + transcode) → TRANSCRIBING → EXTRACTING …
+   (AWAITING_CLARIFICATION / CONFIRMING) is transcribed and handled like a typed answer,
+   but only if the question was asked within `reply_window_seconds` (6 h) and the note is at
+   most `max_voice_reply_seconds` (30 s). A longer or later note is a new review: the waiting
+   submission is ABANDONED (so a stale test reel can never be published with a later voice
+   review's content). Any other voice note starts a `kind="voice"` submission that follows
+   the same machine but skips VERIFYING: NEW → DOWNLOADING (fetch + transcode) →
+   TRANSCRIBING → EXTRACTING …
 ```
 
 | Stage | What happens | Meta model |

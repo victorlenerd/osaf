@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     dominant_speaker_threshold: float = 0.6
     stale_stage_seconds: int = 600
     max_voice_note_seconds: int = 600  # Muse Voice Transcribe file limit is 10 minutes
+    # A voice note sent while a submission waits on the reviewer is taken as the reply only if
+    # the submission asked recently and the note is short; otherwise it is a new voice review.
+    reply_window_seconds: int = 6 * 3600
+    max_voice_reply_seconds: int = 30
     weekly_review_limit: int = 3  # published reviews per reviewer in any rolling 7 days
     points_per_review: int = 10  # flat reward per published review
     # Reels longer or larger than this are refused before download (disk and model cost cap).

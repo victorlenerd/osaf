@@ -41,6 +41,7 @@ from app.pipeline.facecheck import run_face_check
 from app.pipeline.transcribe import transcribe_audio
 from app.pipeline.voice import (
     VoiceNoteError,
+    audio_duration,
     fetch_voice_note,
     transcode_for_playback,
     transcribe_voice_note,
@@ -123,11 +124,20 @@ def _active(conv: Conversation) -> Submission | None:
     return sub
 
 
+def _age_seconds(sub: Submission) -> float:
+    since = datetime.fromisoformat(sub.state_updated_at.replace("Z", "+00:00"))
+    return (datetime.now(UTC) - since).total_seconds()
+
+
 def _is_stale(sub: Submission) -> bool:
     if sub.state not in TRANSIENT_STATES:
         return False
-    age = datetime.now(UTC) - datetime.fromisoformat(sub.state_updated_at.replace("Z", "+00:00"))
-    return age.total_seconds() > get_settings().stale_stage_seconds
+    return _age_seconds(sub) > get_settings().stale_stage_seconds
+
+
+def _reply_window_open(sub: Submission) -> bool:
+    """True while a submission that asked the reviewer something may still take a voice reply."""
+    return _age_seconds(sub) <= get_settings().reply_window_seconds
 
 
 # ------------------------------------------------------------------ entry point
@@ -196,14 +206,39 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         _run_pipeline(active, conv, skip_download=True)
         return
 
-    # 3. a voice note: an answer while we wait on the reviewer, otherwise a voice-only review
+    # 3. a voice note: a short, prompt answer while we wait on the reviewer, otherwise a
+    #    voice-only review (a long note, or one sent hours after the question, is a new review
+    #    even if an old submission is still waiting; otherwise it would be published under
+    #    the old reel)
     if voice_id:
         if active and active.state in (
             SubmissionState.AWAITING_CLARIFICATION,
             SubmissionState.CONFIRMING,
         ):
+            if not _reply_window_open(active):
+                if _refuse_if_over_limit(phone):
+                    return
+                _set_state(active, SubmissionState.ABANDONED, "reply window closed; voice note")
+                wa.send_text(
+                    phone,
+                    "That earlier review had been waiting a while, so I'm taking this voice "
+                    "note as a new review.",
+                )
+                _start_voice_review(conv, voice_id)
+                return
             heard = _hear_reply(active, voice_id)
             if heard is None:
+                return
+            if heard is NEW_REVIEW:
+                if _refuse_if_over_limit(phone):
+                    return
+                _set_state(active, SubmissionState.ABANDONED, "replaced by a long voice note")
+                wa.send_text(
+                    phone,
+                    "That sounds like a full review rather than a reply, so I'm dropping the "
+                    "earlier one and starting fresh with this voice note.",
+                )
+                _start_voice_review(conv, voice_id)
                 return
             text, spoken = heard, True
         elif active and active.state == SubmissionState.PAUSED:
@@ -283,8 +318,15 @@ def _as_logged(text: str, spoken: bool) -> str:
     return f"🎤 {text}" if spoken else text
 
 
+NEW_REVIEW = "NEW_REVIEW"  # sentinel from _hear_reply: the note is too long to be a reply
+
+
 def _hear_reply(sub: Submission, media_id: str) -> str | None:
-    """Transcribe a voice-note answer. Returns the text, or None after telling the reviewer why."""
+    """Transcribe a voice-note answer.
+
+    Returns the text; NEW_REVIEW when the note is longer than a reply should be (the caller
+    starts a fresh voice review); or None after telling the reviewer why it could not be used.
+    """
     if not _models_ready():
         wa.send_text(
             sub.phone,
@@ -292,7 +334,6 @@ def _hear_reply(sub: Submission, media_id: str) -> str | None:
             "Could you type your reply instead?",
         )
         return None
-    wa.send_text(sub.phone, "Listening… 🎧")
     work = _work(sub.submission_id) / f"reply-{media_id}"
     # Bias the ASR towards names the answer is likely to contain.
     keywords = [c.name for c in sub.place_candidates if c.name]
@@ -301,6 +342,9 @@ def _hear_reply(sub: Submission, media_id: str) -> str | None:
         keywords.append(said)
     try:
         note = fetch_voice_note(media_id, work)
+        if audio_duration(note) > get_settings().max_voice_reply_seconds:
+            return NEW_REVIEW
+        wa.send_text(sub.phone, "Listening… 🎧")
         transcript, _ = transcribe_voice_note(note, work, keywords=keywords or None)
     except VoiceNoteError as e:
         wa.send_text(sub.phone, str(e))
