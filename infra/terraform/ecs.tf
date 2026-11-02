@@ -167,11 +167,36 @@ resource "aws_ecs_task_definition" "backend" {
 
   container_definitions = jsonencode([
     {
+      # Fargate creates the "tmp" volume owned by root (0755) and does not support tmpfs, so
+      # the unprivileged backend could not create its work directory in it. This container
+      # runs as root, hands the mount to uid 10001 and exits before the backend starts.
+      name      = "tmp-init"
+      image     = local.backend_image
+      essential = false
+      user      = "0:0"
+      command   = ["sh", "-c", "chown 10001:10001 /tmp && chmod 1777 /tmp"]
+      mountPoints = [{
+        sourceVolume  = "tmp"
+        containerPath = "/tmp"
+        readOnly      = false
+      }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+          "awslogs-region"        = local.region
+          "awslogs-stream-prefix" = "init"
+        }
+      }
+    },
+    {
       name      = "backend"
       image     = local.backend_image
       essential = true
+      dependsOn = [{ containerName = "tmp-init", condition = "SUCCESS" }]
 
-      # The image runs as uid 10001; only /tmp (the volume below) is writable.
+      # The image runs as uid 10001; only /tmp (the volume below, chowned by tmp-init) is
+      # writable.
       user                   = "10001:10001"
       readonlyRootFilesystem = true
       mountPoints = [{
