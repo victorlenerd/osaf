@@ -441,12 +441,17 @@ def _handle_delete_confirmation(conv: Conversation, active: Submission | None) -
     if _pipeline_busy(active):
         wa.send_text(conv.phone, BUSY_MSG)
         return
-    _run_deletion(conv)
+    _run_deletion(conv, active)
 
 
-def _run_deletion(conv: Conversation) -> None:
+def _run_deletion(conv: Conversation, active: Submission | None) -> None:
     # Mark the erasure before starting it: from here on, inbound messages are held off (see
     # step 0) instead of being read as withdrawals or starting work that would outlive it.
+    # The active submission is abandoned first: should the erasure fail and routing resume,
+    # a reply such as "ok" to the error must not publish the review being erased.
+    if active is not None:
+        _set_state(active, SubmissionState.ABANDONED, "reviewer asked for erasure")
+    conv.active_submission_id = None
     conv.deletion_requested_at = None
     conv.erasure_started_at = now_iso()
     dynamo.put_conversation(conv)

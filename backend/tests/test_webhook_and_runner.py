@@ -119,6 +119,10 @@ class FakeStore:
         if phone in self.convs:
             self.convs[phone].erasure_started_at = None
 
+    def set_erasure_businesses(self, phone, ids):
+        if phone in self.convs:
+            self.convs[phone].erasure_businesses = ids
+
     def get_points(self, phone):
         return self.points.get(phone, 0)
 
@@ -1010,6 +1014,25 @@ def test_failed_erasure_lifts_the_hold_and_can_be_retried(eraser, monkeypatch):
     runner.process_inbound(PHONE, _text("delete my data"), "Ada")
     runner.process_inbound(PHONE, _text("DELETE"), "Ada")
     assert attempts == [PHONE, PHONE] and "Done ✅" in sent[-1][1]
+
+
+def test_failed_erasure_cannot_publish_the_review_being_erased(eraser, monkeypatch):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store, question="Here's what I got")
+    sub.state = SubmissionState.CONFIRMING
+
+    def boom(phone):
+        raise RuntimeError("dynamo throttled")
+
+    monkeypatch.setattr(runner.erase, "erase_reviewer", boom)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert "went wrong part-way" in sent[-1][1]
+    # the submission was abandoned at confirmation, so an "ok" to the error publishes nothing
+    assert sub.state == SubmissionState.ABANDONED
+    assert store.convs[PHONE].active_submission_id is None
+    runner.process_inbound(PHONE, _text("ok"), "Ada")
+    assert "publish" not in events and not events
 
 
 def test_erasure_waits_for_a_running_pipeline(eraser):

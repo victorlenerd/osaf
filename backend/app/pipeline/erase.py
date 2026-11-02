@@ -40,6 +40,7 @@ class ErasureReport:
     objects: int = 0  # S3 objects removed
     businesses_rebuilt: list[str] = field(default_factory=list)
     businesses_removed: list[str] = field(default_factory=list)
+    businesses_failed: list[str] = field(default_factory=list)  # rebuild raised; see errors
     points_forfeited: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -79,12 +80,19 @@ def erase_reviewer(phone: str) -> ErasureReport:
     label = phone_label(phone)
     report.points_forfeited = dynamo.get_points(phone)
 
-    # 1. published reviews
-    touched: dict[str, None] = {}
+    # 1. published reviews. The affected businesses are written to the conversation first:
+    #    if this run dies half-way, the retry no longer sees the reviews it already deleted
+    #    but still has to rebuild (or remove) the businesses they were under.
+    reviews = dynamo.list_all_reviews_by_reviewer(phone_hash(phone))
+    touched: dict[str, None] = dict.fromkeys(r.business_id for r in reviews)
+    conv = dynamo.get_conversation(phone)
+    if conv:
+        touched.update(dict.fromkeys(conv.erasure_businesses))
+    if touched:
+        dynamo.set_erasure_businesses(phone, list(touched))
     folders: set[str] = set()
-    for review in dynamo.list_all_reviews_by_reviewer(phone_hash(phone)):
+    for review in reviews:
         dynamo.delete_review(review)
-        touched[review.business_id] = None
         _delete_folder(report, review.submission_id, folders)
         if review.reel_shortcode:
             dynamo.delete_reel_claim(review.reel_shortcode)
@@ -104,6 +112,7 @@ def erase_reviewer(phone: str) -> ErasureReport:
             _rebuild_business(report, business_id)
         except Exception as e:  # noqa: BLE001
             log.exception("could not rebuild %s after erasing %s", business_id, label)
+            report.businesses_failed.append(business_id)
             report.errors.append(f"business {business_id}: {e!r}")
 
     # 4. the number itself
@@ -156,6 +165,7 @@ def _write_receipt(phone: str, report: ErasureReport) -> None:
                 "objects": report.objects,
                 "businesses_rebuilt": report.businesses_rebuilt,
                 "businesses_removed": report.businesses_removed,
+                "businesses_failed": report.businesses_failed,
                 "errors": report.errors,
                 "expires_at": int(time.time()) + RECEIPT_TTL_SECONDS,
             },

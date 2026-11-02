@@ -53,6 +53,8 @@ def main() -> int:
         print(f"  rebuilt  {bid}")
     for bid in report.businesses_removed:
         print(f"  removed  {bid}")
+    for bid in report.businesses_failed:
+        print(f"  FAILED   {bid}  (re-run with --yes to retry the rebuild)", file=sys.stderr)
     for err in report.errors:
         print(f"  ERROR    {err}", file=sys.stderr)
     print(f"reference: {report.reference}")

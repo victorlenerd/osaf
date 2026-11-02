@@ -38,6 +38,7 @@ class FakeDynamo:
         self.summaries: dict[str, BusinessSummary] = {}
         self.receipts: dict[str, dict] = {}
         self.deleted_businesses: list[str] = []
+        self.erasure_businesses: dict[str, list[str]] = {}
 
     # reads
     def list_all_reviews_by_reviewer(self, h):
@@ -51,6 +52,17 @@ class FakeDynamo:
 
     def get_points(self, phone):
         return self.points.get(phone, 0)
+
+    def get_conversation(self, phone):
+        from app.models import Conversation
+
+        if phone not in self.convs:
+            return None
+        return Conversation(phone=phone, erasure_businesses=self.erasure_businesses.get(phone, []))
+
+    def set_erasure_businesses(self, phone, ids):
+        if phone in self.convs:
+            self.erasure_businesses[phone] = list(ids)
 
     # deletes
     def delete_review(self, r):
@@ -180,6 +192,45 @@ def test_erasure_removes_everything_of_one_reviewer_only(monkeypatch):
     receipt = db.receipts[report.reference]
     assert receipt["reviewer_hash"] == phone_hash(ADA) and receipt["reviews"] == 2
     assert ADA not in str(receipt)
+
+
+def test_affected_businesses_are_recorded_before_any_review_is_deleted(monkeypatch):
+    db, s3, search = _world(monkeypatch)
+    seen: list[list[str]] = []
+    original = db.delete_review
+
+    def spy(r):
+        seen.append(list(db.erasure_businesses.get(ADA, [])))
+        original(r)
+
+    db.delete_review = spy
+    erase.erase_reviewer(ADA)
+    assert seen and all(sorted(ids) == ["shared", "solo"] for ids in seen)
+
+
+def test_retry_after_a_failed_run_still_rebuilds_the_businesses(monkeypatch):
+    """First attempt deleted Ada's reviews and then died before the rebuild step. On retry
+    the reviews are gone, so only the recorded list says which businesses need work."""
+    db, s3, search = _world(monkeypatch)
+    db.reviews = [r for r in db.reviews if r.reviewer_phone_hash != phone_hash(ADA)]
+    db.erasure_businesses[ADA] = ["shared", "solo"]
+    report = erase.erase_reviewer(ADA)
+    assert report.reviews == 0 and report.clean
+    assert report.businesses_rebuilt == ["shared"] and report.businesses_removed == ["solo"]
+    assert search.upserted == ["shared"] and search.deleted == ["solo"]
+    assert db.summaries["shared"].review_count == 1
+
+
+def test_failed_rebuild_is_named_on_the_receipt(monkeypatch):
+    db, s3, search = _world(monkeypatch)
+
+    def broken(b, s):
+        raise RuntimeError("opensearch down")
+
+    search.upsert_business = broken
+    report = erase.erase_reviewer(ADA)
+    assert report.businesses_failed == ["shared"] and not report.clean
+    assert db.receipts[report.reference]["businesses_failed"] == ["shared"]
 
 
 def test_s3_failure_is_reported_but_does_not_stop_the_erasure(monkeypatch):

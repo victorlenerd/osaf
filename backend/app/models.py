@@ -234,6 +234,10 @@ class Conversation(BaseModel):
     # Set the moment the reviewer confirms; while it is recent, inbound messages are held off
     # so nothing is written back under an erasure that is still running.
     erasure_started_at: str | None = None
+    # Businesses whose counters, summary and search document must be rebuilt once this
+    # number's reviews are gone. Written before the first review is deleted so a retry after
+    # a failed run still knows which businesses it touched.
+    erasure_businesses: list[str] = Field(default_factory=list)
     updated_at: str = Field(default_factory=now_iso)
     # DynamoDB TTL: conversations are kept 12 months after the last message (privacy policy).
     expires_at: int | None = None

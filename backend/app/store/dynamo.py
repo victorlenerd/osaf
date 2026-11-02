@@ -94,6 +94,21 @@ def _remove_conversation_attrs(phone: str, *names: str) -> None:
             raise
 
 
+def set_erasure_businesses(phone: str, business_ids: list[str]) -> None:
+    """Record the businesses an erasure will have to rebuild, in place and only while the
+    conversation item exists (it is the last thing the erasure removes)."""
+    try:
+        _table().update_item(
+            Key={"PK": f"CONV#{phone}", "SK": "META"},
+            UpdateExpression="SET erasure_businesses = :b",
+            ConditionExpression="attribute_exists(PK)",
+            ExpressionAttributeValues={":b": business_ids},
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+
+
 def clear_deletion_request(phone: str) -> None:
     """Withdraw a pending "delete my data" request."""
     _remove_conversation_attrs(phone, "deletion_requested_at")
