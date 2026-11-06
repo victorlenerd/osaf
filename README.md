@@ -239,7 +239,7 @@ site.
 | Path | What |
 |---|---|
 | `backend/` | FastAPI service: WhatsApp webhook, pipeline, Muse Spark agent, public API, tests |
-| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py` |
+| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage) |
 | `frontend/` | Next.js static site (search, business pages, about, terms, privacy) and a zero-dependency mock API |
 | `infra/terraform/` | AWS: Route53, ACM, S3 + CloudFront, ECS Fargate + ALB, DynamoDB, OpenSearch, ECR, SSM, WAF |
 | `scripts/` | `deploy_backend.sh` (build, push by git SHA, roll ECS), `set_secrets.sh` (SSM secrets) |

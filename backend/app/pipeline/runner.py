@@ -151,12 +151,20 @@ def _reply_window_open(sub: Submission) -> bool:
 
 
 # ------------------------------------------------------------------ entry point
-def process_inbound(phone: str, msg: dict, display_name: str | None = None) -> None:
-    try:
-        _process_inbound(phone, msg, display_name)
-    except Exception:  # noqa: BLE001
-        log.error("unhandled error for %s: %s", phone_label(phone), traceback.format_exc())
-        wa.send_text(phone, "Something went wrong on my side. Please try again in a minute.")
+def process_inbound(
+    phone: str,
+    msg: dict,
+    display_name: str | None = None,
+    phone_number_id: str | None = None,
+) -> None:
+    """`phone_number_id` is the business number the message arrived on: every reply sent
+    while handling it leaves from that same number."""
+    with wa.sending_from(phone_number_id):
+        try:
+            _process_inbound(phone, msg, display_name)
+        except Exception:  # noqa: BLE001
+            log.error("unhandled error for %s: %s", phone_label(phone), traceback.format_exc())
+            wa.send_text(phone, "Something went wrong on my side. Please try again in a minute.")
 
 
 def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:

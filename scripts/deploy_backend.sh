@@ -15,7 +15,17 @@ CLUSTER="${SVC%%/*}"; SERVICE="${SVC##*/}"
 ACCOUNT="${REPO%%.dkr.ecr*}"
 
 echo "==> login to ECR ($REGION)"
-aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+# The ECR token goes into a throwaway Docker config instead of through `docker login`: the macOS
+# keychain helper refuses to overwrite an existing registry entry ("The specified item already
+# exists in the keychain", -25299), and the token only lasts 12 hours anyway. The engine the
+# current context points at is kept, since a fresh config would forget it.
+REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+export DOCKER_HOST="${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}"
+DOCKER_CONFIG="$(mktemp -d)"; export DOCKER_CONFIG
+trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+[ -d "$HOME/.docker/cli-plugins" ] && ln -s "$HOME/.docker/cli-plugins" "$DOCKER_CONFIG/cli-plugins"
+AUTH="$(printf 'AWS:%s' "$(aws ecr get-login-password --region "$REGION")" | base64 | tr -d '\n')"
+(umask 077; printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$AUTH" > "$DOCKER_CONFIG/config.json")
 
 echo "==> build + push $REPO:$TAG"
 docker buildx build --platform linux/amd64 -t "$REPO:$TAG" -t "$REPO:latest" --push backend

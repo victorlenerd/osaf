@@ -68,11 +68,13 @@ async def receive(
             contacts = {
                 c.get("wa_id"): c.get("profile", {}).get("name") for c in value.get("contacts", [])
             }
+            # Which of our numbers this was sent to; the reply goes out from the same one.
+            sent_to = (value.get("metadata") or {}).get("phone_number_id")
             for msg in value.get("messages", []):
                 wamid = msg.get("id")
                 if not wamid or not dynamo.claim_wa_message(wamid):
                     continue
                 phone = msg.get("from")
-                background.add_task(process_inbound, phone, msg, contacts.get(phone))
+                background.add_task(process_inbound, phone, msg, contacts.get(phone), sent_to)
                 queued += 1
     return {"status": "ok", "queued": queued}
