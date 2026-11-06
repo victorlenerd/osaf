@@ -11,7 +11,7 @@ Copy `.env.example` to `.env.local` and fill in:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `NEXT_PUBLIC_API_BASE` | `http://localhost:8000` | Base URL of the API, no trailing slash. Production: `https://api.afefehub.com`. |
-| `NEXT_PUBLIC_WHATSAPP_NUMBER` | `+1 (555) 137-0042` | WhatsApp number reviewers send reel links to. Shown on the home page and used for the wa.me link. |
+| `NEXT_PUBLIC_WHATSAPP_NUMBER` | `+234 803 174 9669` | WhatsApp number reviewers send reel links to. Shown on the home page and used for the wa.me link. |
 | `NEXT_PUBLIC_REPO_URL` | empty | Link to the public repository, shown on `/about` and in the footer. |
 
 These are inlined at build time, so rebuild after changing them.

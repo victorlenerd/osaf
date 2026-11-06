@@ -10,7 +10,9 @@ from app.models import QA, Conversation, Review, Submission, SubmissionState, Tr
 from app.pipeline import runner
 
 
-def _payload(text: str, wamid: str = "wamid.1", phone: str = "2348012345678") -> dict:
+def _payload(
+    text: str, wamid: str = "wamid.1", phone: str = "2348012345678", sent_to: str = "111222333"
+) -> dict:
     return {
         "object": "whatsapp_business_account",
         "entry": [
@@ -19,6 +21,10 @@ def _payload(text: str, wamid: str = "wamid.1", phone: str = "2348012345678") ->
                     {
                         "value": {
                             "messaging_product": "whatsapp",
+                            "metadata": {
+                                "display_phone_number": "2348000000000",
+                                "phone_number_id": sent_to,
+                            },
                             "contacts": [{"wa_id": phone, "profile": {"name": "Ada"}}],
                             "messages": [
                                 {"from": phone, "id": wamid, "type": "text", "text": {"body": text}}
@@ -77,6 +83,18 @@ def test_signature_and_dedupe(client):
     r = client.post("/webhooks/whatsapp", content=body, headers={"X-Hub-Signature-256": sig})
     assert r.json()["queued"] == 0  # duplicate wamid ignored
     assert client.calls[0][0] == "2348012345678" and client.calls[0][2] == "Ada"
+    assert client.calls[0][3] == "111222333"  # the business number it arrived on
+    get_settings().meta_app_secret = ""
+
+
+def test_webhook_without_metadata_still_queues(client):
+    get_settings().meta_app_secret = "secret"
+    payload = _payload("hello", wamid="wamid.nometa")
+    del payload["entry"][0]["changes"][0]["value"]["metadata"]
+    body = json.dumps(payload).encode()
+    sig = "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+    r = client.post("/webhooks/whatsapp", content=body, headers={"X-Hub-Signature-256": sig})
+    assert r.json()["queued"] == 1 and client.calls[0][3] is None
     get_settings().meta_app_secret = ""
 
 

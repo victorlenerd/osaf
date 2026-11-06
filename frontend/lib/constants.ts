@@ -75,7 +75,7 @@ export function languageName(code: string): string {
 }
 
 /** Shown on the site and used for the wa.me link. Override with NEXT_PUBLIC_WHATSAPP_NUMBER. */
-export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "+1 (555) 137-0042";
+export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "+234 803 174 9669";
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || "";
 
 /** Reviewer rewards. Mirrors backend `points_per_review`; the gift card itself is handed out manually for now. */
