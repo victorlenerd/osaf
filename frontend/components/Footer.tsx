@@ -16,6 +16,7 @@ export default function Footer() {
           <Link href="/about" className="hover:underline">About</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
+          <Link href="/data-deletion" className="hover:underline">Delete my data</Link>
           {REPO_URL && <GitHubStars url={REPO_URL} />}
         </nav>
       </div>

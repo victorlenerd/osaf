@@ -111,6 +111,18 @@ class FakeStore:
         self.points[phone] = self.points.get(phone, 0) + n
         return self.points[phone]
 
+    def clear_deletion_request(self, phone):
+        if phone in self.convs:  # conditional on the item existing, like the real one
+            self.convs[phone].deletion_requested_at = None
+
+    def clear_erasure_marker(self, phone):
+        if phone in self.convs:
+            self.convs[phone].erasure_started_at = None
+
+    def set_erasure_businesses(self, phone, ids):
+        if phone in self.convs:
+            self.convs[phone].erasure_businesses = ids
+
     def get_points(self, phone):
         return self.points.get(phone, 0)
 
@@ -801,3 +813,263 @@ def test_business_endpoint_exposes_reviewer_country_not_hash(monkeypatch):
     assert by_id["r1"]["reviewer_country"] == "GH"
     assert by_id["r0"]["reviewer_country"] is None
     assert "reviewer_phone_hash" not in by_id["r1"]
+
+
+# ------------------------------------------------------------------ erasure over WhatsApp
+@pytest.fixture
+def eraser(world, monkeypatch):
+    """`world` plus a scripted erase module: preview counts and a recorded erase call."""
+    from app.pipeline import erase
+
+    erased: list[str] = []
+    preview = erase.ErasurePreview(reviews=2, submissions=3, points=20)
+    monkeypatch.setattr(runner.erase, "preview", lambda phone: preview)
+
+    def fake_erase(phone):
+        erased.append(phone)
+        return erase.ErasureReport(reference="01REF", reviews=2, submissions=3)
+
+    monkeypatch.setattr(runner.erase, "erase_reviewer", fake_erase)
+    return (*world, erased)
+
+
+def test_delete_request_asks_for_confirmation(eraser):
+    store, sent, events, erased = eraser
+    for phrase in ("delete my data", "Erase my reviews", "remove my account please", "forget me"):
+        runner.process_inbound(PHONE, _text(phrase), "Ada")
+        body = sent[-1][1]
+        assert "2 published reviews" in body and "1 other submission" in body
+        assert "20 points" in body
+        assert "Reply *DELETE*" in body
+    assert store.convs[PHONE].deletion_requested_at and not erased and not events
+
+
+def test_delete_confirmation_erases_and_reports_reference(eraser):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert erased == [PHONE]
+    assert "Done ✅" in sent[-1][1] and "01REF" in sent[-1][1] and "2 reviews" in sent[-1][1]
+
+
+def _minutes_ago(n: float) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(minutes=n)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_delete_confirmation_requires_capitals_and_a_recent_request(eraser):
+    store, sent, events, erased = eraser
+    # no request at all: DELETE explains the two-step flow instead of erasing
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and "first send *delete my data*" in sent[-1][1]
+    # a request, then lowercase: a withdrawal, not a confirmation
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("delete"), "Ada")
+    assert not erased and "nothing deleted" in sent[-1][1]
+    assert store.convs[PHONE].deletion_requested_at is None
+    # a request that is too old
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    store.convs[PHONE].deletion_requested_at = _minutes_ago(11)
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and "more than 10 minutes old" in sent[-1][1]
+    assert store.convs[PHONE].deletion_requested_at is None
+
+
+def _waiting_submission(store, question="Which Yaba?") -> Submission:
+    sub = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION,
+        pending_question=question,
+    )
+    store.subs["s1"] = sub
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    return sub
+
+
+def test_withdrawing_a_deletion_is_not_a_review_answer(eraser):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("no"), "Ada")
+    assert not erased and sub.qa_log == [] and not events
+    assert sub.state == SubmissionState.AWAITING_CLARIFICATION
+    assert "nothing deleted" in sent[-1][1] and "Which Yaba?" in sent[-1][1]
+    # with the request withdrawn, the next message is an ordinary answer again
+    runner.process_inbound(PHONE, _text("Ikeja"), "Ada")
+    assert sub.qa_log == [QA(q="Which Yaba?", a="Ikeja")]
+
+
+def test_expired_delete_is_not_a_correction(eraser):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store)
+    sub.state = SubmissionState.CONFIRMING
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    store.convs[PHONE].deletion_requested_at = _minutes_ago(11)
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and not events and sub.qa_log == []
+    assert sub.state == SubmissionState.CONFIRMING
+
+
+def test_new_reel_withdraws_deletion_and_is_processed(eraser):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text(REEL), "Ada")
+    assert not erased and events == ["pipeline:AbC123"]
+    assert "nothing deleted" in sent[-2][1]
+    assert store.convs[PHONE].deletion_requested_at is None
+
+
+def test_messages_during_an_erasure_are_held_off(eraser):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    conv = store.convs[PHONE]
+    # the marker goes down before the erasure starts, and the request is no longer pending
+    assert conv.erasure_started_at and conv.deletion_requested_at is None
+    # the erasure is still running (the fake left the conversation in place): nothing written
+    before = (dict(store.convs), dict(store.subs))
+    for msg in (_text("hello?"), _text("no"), _text(REEL)):
+        runner.process_inbound(PHONE, msg, "Ada")
+        assert "in progress" in sent[-1][1]
+    assert (dict(store.convs), dict(store.subs)) == before and not events
+    assert erased == [PHONE]
+    # a marker older than the bound does not lock the number out
+    conv.erasure_started_at = _minutes_ago(16)
+    runner.process_inbound(PHONE, _text("hello?"), "Ada")
+    assert "Afefehub" in sent[-1][1]
+
+
+def test_withdrawal_never_recreates_a_deleted_conversation(monkeypatch):
+    """A withdrawal that read the conversation just before an erasure removed it must not
+    write the item back: the store clears the request with a conditional in-place update
+    and treats "item gone" as success."""
+    from botocore.exceptions import ClientError
+
+    from app.store import dynamo
+
+    calls: list[dict] = []
+
+    class T:
+        def update_item(self, **kw):
+            calls.append(kw)
+            raise ClientError(
+                {"Error": {"Code": "ConditionalCheckFailedException", "Message": "gone"}},
+                "UpdateItem",
+            )
+
+        def put_item(self, **kw):
+            raise AssertionError("a withdrawal must never put the conversation item")
+
+    monkeypatch.setattr(dynamo, "_table", lambda: T())
+    dynamo.clear_deletion_request(PHONE)  # no exception
+    kw = calls[0]
+    assert kw["ConditionExpression"] == "attribute_exists(PK)"
+    assert kw["UpdateExpression"].startswith("REMOVE deletion_requested_at")
+    assert kw["Key"] == {"PK": f"CONV#{PHONE}", "SK": "META"}
+
+
+def test_video_only_counts_as_content_when_one_is_awaited(eraser, monkeypatch):
+    store, sent, events, erased = eraser
+    video = {"type": "video", "video": {"id": "v1"}}
+    # nothing waiting for a file: the video is just a withdrawal, no false promise
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, video, "Ada")
+    assert "Carrying on" not in sent[-1][1] and "nothing deleted" in sent[-1][1]
+    # a submission waiting for the file: withdraw and continue with it
+    sub = _waiting_submission(store)
+    sub.state = SubmissionState.AWAITING_VIDEO
+    monkeypatch.setattr(runner.wa, "download_media", lambda media_id, dest: dest)
+    monkeypatch.setattr(runner, "extract_audio", lambda src, dst: dst)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, video, "Ada")
+    assert any("Carrying on" in b for _, b in sent[-3:])
+    assert events[-1] == "pipeline:sc" and not erased
+
+
+def test_failed_erasure_lifts_the_hold_and_can_be_retried(eraser, monkeypatch):
+    store, sent, events, erased = eraser
+    attempts: list[str] = []
+
+    def flaky(phone):
+        attempts.append(phone)
+        if len(attempts) == 1:
+            raise RuntimeError("opensearch down")
+        from app.pipeline import erase
+
+        return erase.ErasureReport(reference="01REF", reviews=0, submissions=0)
+
+    monkeypatch.setattr(runner.erase, "erase_reviewer", flaky)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert attempts == [PHONE] and "went wrong part-way" in sent[-1][1]
+    conv = store.convs[PHONE]
+    assert conv.erasure_started_at is None and conv.deletion_requested_at is None
+    # the chat is not locked: an ordinary message gets an ordinary reply...
+    runner.process_inbound(PHONE, _text("hello?"), "Ada")
+    assert "Afefehub" in sent[-1][1] and "in progress" not in sent[-1][1]
+    # ...and a fresh request + DELETE runs the erasure again
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert attempts == [PHONE, PHONE] and "Done ✅" in sent[-1][1]
+
+
+def test_failed_erasure_cannot_publish_the_review_being_erased(eraser, monkeypatch):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store, question="Here's what I got")
+    sub.state = SubmissionState.CONFIRMING
+
+    def boom(phone):
+        raise RuntimeError("dynamo throttled")
+
+    monkeypatch.setattr(runner.erase, "erase_reviewer", boom)
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert "went wrong part-way" in sent[-1][1]
+    # the submission was abandoned at confirmation, so an "ok" to the error publishes nothing
+    assert sub.state == SubmissionState.ABANDONED
+    assert store.convs[PHONE].active_submission_id is None
+    runner.process_inbound(PHONE, _text("ok"), "Ada")
+    assert "publish" not in events and not events
+
+
+def test_erasure_waits_for_a_running_pipeline(eraser):
+    store, sent, events, erased = eraser
+    sub = _waiting_submission(store)
+    sub.state = SubmissionState.TRANSCRIBING  # a worker is on it right now
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    assert "still processing" in sent[-1][1]
+    assert store.convs[PHONE].deletion_requested_at is None and not erased
+    # a confirmation that lands while a stage is running is refused too
+    sub.state = SubmissionState.AWAITING_CLARIFICATION
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    sub.state = SubmissionState.EXTRACTING
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert not erased and "still processing" in sent[-1][1]
+    # a stale stage is a crashed one, not a running one: erasure proceeds
+    sub.state_updated_at = _minutes_ago(30)
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert erased == [PHONE]
+
+
+def test_delete_request_never_counts_as_a_review_answer(eraser):
+    store, sent, events, erased = eraser
+    store.subs["s1"] = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION,
+        pending_question="Which Yaba?",
+    )
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert store.subs["s1"].qa_log == [] and not events and erased == [PHONE]
+
+
+def test_help_mentions_deletion(world):
+    store, sent, events = world
+    runner.process_inbound(PHONE, _text("hi"), "Ada")
+    assert "delete my data" in sent[0][1]

@@ -29,7 +29,7 @@ from app.models import (
     now_iso,
 )
 from app.pii import phone_label
-from app.pipeline import publish, quota
+from app.pipeline import erase, publish, quota
 from app.pipeline.download import (
     DownloadError,
     download_reel,
@@ -61,7 +61,8 @@ def help_text() -> str:
         "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
         f"the business name and area clearly.\n\nYou can publish up to {s.weekly_review_limit} "
         f"reviews a week, and every published review earns {s.points_per_review} points. Text "
-        "*points* anytime to see your total."
+        "*points* anytime to see your total, or *delete my data* to erase everything I hold "
+        "about you."
     )
 
 
@@ -69,6 +70,15 @@ CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
 )
 POINTS_WORDS = re.compile(r"^\s*(my\s+)?(points|balance|score)\s*[?!.]*\s*$", re.I)
+# "delete my data", "erase my reviews", "remove my account", "delete everything", "forget me"
+DELETE_WORDS = re.compile(
+    r"^\s*((delete|erase|remove|wipe)\s+(all\s+)?(my\s+)?(data|account|reviews?|everything|info)"
+    r"|forget\s+me|delete\s+me)\b",
+    re.I,
+)
+# The confirmation is deliberately strict: the single word DELETE, in capitals.
+DELETE_CONFIRM = re.compile(r"^\s*DELETE\s*[.!]*\s*$")
+DELETE_WINDOW_SECONDS = 10 * 60
 LIMIT_MSG = (
     "You've published {limit} reviews this week, which is the most Afefehub takes from one "
     "person in 7 days 🙏 Your next slot opens {when}. Come back then with your next reel or "
@@ -157,8 +167,42 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
     spoken = False
     active = _active(conv)
 
-    # 1. a new reel link always starts (or restarts) a submission
     found = extract_reel(text)
+
+    # 0. erasure, handled before anything else so none of these messages is ever read as a
+    #    review answer: "delete my data" asks for a confirmation, DELETE within the window
+    #    runs it, and any other reply while the question is open withdraws it. While an
+    #    erasure is running nothing is written at all, or it would come back afterwards.
+    if _erasure_in_progress(conv):
+        wa.send_text(phone, ERASING_MSG)
+        return
+    if mtype == "text" and DELETE_WORDS.match(text):
+        _ask_to_confirm_deletion(conv, active)
+        return
+    if mtype == "text" and DELETE_CONFIRM.match(text):
+        _handle_delete_confirmation(conv, active)
+        return
+    if _deletion_pending(conv):
+        conv.deletion_requested_at = None
+        dynamo.clear_deletion_request(phone)
+        awaited_file = (
+            mtype in ("video", "document")
+            and active is not None
+            and active.state == SubmissionState.AWAITING_VIDEO
+        )
+        if found or voice_id or awaited_file:
+            wa.send_text(phone, "Okay, nothing deleted. Carrying on with what you just sent.")
+        else:
+            body = "Okay, nothing deleted. Your data stays as it is."
+            if active and active.pending_question:
+                body += (
+                    "\n\nYour current review is still waiting for your reply 🙂\n\n"
+                    + active.pending_question
+                )
+            wa.send_text(phone, body)
+            return
+
+    # 1. a new reel link always starts (or restarts) a submission
     if found:
         url, shortcode = found
         if active and active.reel_shortcode == shortcode:
@@ -312,6 +356,138 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
 
     # 5. anything else
     wa.send_text(phone, help_text())
+
+
+# ----------------------------------------------------------------- erasure
+def _seconds_since(iso: str) -> float:
+    return (datetime.now(UTC) - datetime.fromisoformat(iso.replace("Z", "+00:00"))).total_seconds()
+
+
+def _deletion_pending(conv: Conversation) -> bool:
+    if not conv.deletion_requested_at:
+        return False
+    return _seconds_since(conv.deletion_requested_at) <= DELETE_WINDOW_SECONDS
+
+
+def _erasure_in_progress(conv: Conversation) -> bool:
+    """True from the confirmation until the conversation item itself is deleted (which takes
+    the marker with it). Bounded so a crashed erasure does not lock the number out."""
+    if not conv.erasure_started_at:
+        return False
+    return _seconds_since(conv.erasure_started_at) <= ERASURE_MAX_SECONDS
+
+
+ERASURE_MAX_SECONDS = 15 * 60
+ERASING_MSG = (
+    "Your data deletion is in progress, hang on a moment… I'll confirm here when it's done."
+)
+
+
+def _pipeline_busy(active: Submission | None) -> bool:
+    """True while a pipeline stage is actually running for this number in some worker. Erasing
+    under it would race: the stage would write the submission, media, review or points back
+    after we told the reviewer everything was gone. A stale stage is a crashed one, not a
+    running one."""
+    return active is not None and active.state in TRANSIENT_STATES and not _is_stale(active)
+
+
+BUSY_MSG = (
+    "I'm still processing your last review, so I can't erase your data this very moment "
+    "(it would come straight back). Give it a minute, then send *delete my data* again."
+)
+
+
+def _ask_to_confirm_deletion(conv: Conversation, active: Submission | None) -> None:
+    if _pipeline_busy(active):
+        wa.send_text(conv.phone, BUSY_MSG)
+        return
+    p = erase.preview(conv.phone)
+    reviews = f"{p.reviews} published review{'s' if p.reviews != 1 else ''}"
+    pending = p.submissions - p.reviews
+    extra = f", {pending} other submission{'s' if pending != 1 else ''}" if pending > 0 else ""
+    conv.deletion_requested_at = now_iso()
+    dynamo.put_conversation(conv)
+    wa.send_text(
+        conv.phone,
+        "⚠️ This will permanently erase everything Afefehub holds about this number: "
+        f"{reviews}{extra}, our stored copies of your videos, voice notes and transcripts, "
+        f"your chat history and your {p.points} points. Your reviews disappear from "
+        "afefehub.com right away. This cannot be undone.\n\n"
+        f"Reply *DELETE* (in capitals) within {DELETE_WINDOW_SECONDS // 60} minutes to "
+        "confirm. Reply anything else, or nothing, to keep your data.\n\n"
+        "Only want one review taken down? Don't confirm; email privacy@afefehub.com with the "
+        "business name instead.",
+    )
+
+
+def _handle_delete_confirmation(conv: Conversation, active: Submission | None) -> None:
+    """The word DELETE on its own, whatever the state of the request."""
+    if not conv.deletion_requested_at:
+        wa.send_text(
+            conv.phone,
+            "To erase your data, first send *delete my data* so I can show you what would go; "
+            "then reply DELETE to confirm.",
+        )
+        return
+    if not _deletion_pending(conv):
+        conv.deletion_requested_at = None
+        dynamo.clear_deletion_request(conv.phone)
+        wa.send_text(
+            conv.phone,
+            f"That request is more than {DELETE_WINDOW_SECONDS // 60} minutes old, so nothing "
+            "was deleted. Send *delete my data* again to start over.",
+        )
+        return
+    if _pipeline_busy(active):
+        wa.send_text(conv.phone, BUSY_MSG)
+        return
+    _run_deletion(conv, active)
+
+
+def _run_deletion(conv: Conversation, active: Submission | None) -> None:
+    # Mark the erasure before starting it: from here on, inbound messages are held off (see
+    # step 0) instead of being read as withdrawals or starting work that would outlive it.
+    # The active submission is abandoned first: should the erasure fail and routing resume,
+    # a reply such as "ok" to the error must not publish the review being erased.
+    if active is not None:
+        _set_state(active, SubmissionState.ABANDONED, "reviewer asked for erasure")
+    conv.active_submission_id = None
+    conv.deletion_requested_at = None
+    conv.erasure_started_at = now_iso()
+    dynamo.put_conversation(conv)
+    wa.send_text(conv.phone, "Deleting now… this takes a moment.")
+    try:
+        report = erase.erase_reviewer(conv.phone)
+    except Exception:  # noqa: BLE001
+        # Lift the hold, or the number would be locked out for ERASURE_MAX_SECONDS with no
+        # way to restart. Anything already removed stays removed; a retry finishes the rest.
+        log.exception("erasure failed for %s", phone_label(conv.phone))
+        conv.erasure_started_at = None
+        dynamo.clear_erasure_marker(conv.phone)
+        wa.send_text(
+            conv.phone,
+            "Something went wrong part-way through deleting your data. Nothing that was "
+            "removed has come back, and we've logged the failure. Send *delete my data* "
+            "again to finish the job, or email privacy@afefehub.com.",
+        )
+        return
+    if report.clean:
+        wa.send_text(
+            conv.phone,
+            f"Done ✅ {report.reviews} review{'s' if report.reviews != 1 else ''} removed and "
+            "everything else erased. Afefehub no longer holds any data about this number; "
+            f"reference {report.reference}. Backups roll over within 35 days.\n\n"
+            "If you ever want to review again, just send a reel link or voice note. "
+            "Thank you for being part of Afefehub 🙏",
+        )
+    else:
+        log.error("erasure %s finished with errors: %s", report.reference, report.errors)
+        wa.send_text(
+            conv.phone,
+            f"Your reviews and chat history are gone, but a few stored files could not be "
+            f"removed automatically. We've logged it and will finish by hand; reference "
+            f"{report.reference}.",
+        )
 
 
 def _as_logged(text: str, spoken: bool) -> str:

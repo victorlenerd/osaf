@@ -285,7 +285,7 @@ const sections: LegalSection[] = [
         <ul>
           <li><strong>Access</strong>: ask for a copy of the personal data we hold about you;</li>
           <li><strong>Rectification</strong>: ask us to correct inaccurate data, including a transcript or extracted field that misrepresents what you said;</li>
-          <li><strong>Erasure</strong>: ask us to remove your review and delete your data;</li>
+          <li><strong>Erasure</strong>: ask us to remove your review and delete your data. Reviewers can do this themselves at any time by texting <em>delete my data</em> to the {B} WhatsApp number; see <Link href="/data-deletion">Delete your data</Link>;</li>
           <li><strong>Restriction and objection</strong>: ask us to pause processing or object to processing based on legitimate interests;</li>
           <li><strong>Portability</strong>: receive the data you provided in a machine-readable format;</li>
           <li><strong>Withdraw consent</strong> at any time, without affecting processing that already took place;</li>
@@ -417,7 +417,7 @@ export default function PrivacyPage() {
         "Your Instagram display name and the review are public. Your phone number is never published or shared with the business.",
         "Processing is done by Meta's models and hosted on AWS in the United States. Nothing is sold and nothing is used for advertising.",
         "Our website sets no cookies. Embedded Instagram reels are served by Instagram under Meta's cookie policy.",
-        "You can withdraw a review and have your data deleted at any time, from the WhatsApp number you used or by email. We respond within 30 days.",
+        "You can delete everything we hold about you yourself, in a minute, by texting \"delete my data\" to our WhatsApp number from the number you used. Email requests are answered within 30 days.",
         "People who appear in a reel without consenting, and businesses, can ask us to act by email.",
       ]}
       sections={sections}

@@ -58,7 +58,11 @@ history that an AI keeps summarized.
 ## Data
 
 **DynamoDB** single table `afefehub` (PK/SK + GSI1): conversations, submissions, dedupe locks,
-businesses, reviews, summaries. Reviews store a salted hash of the reviewer's phone, never the number.
+businesses, reviews, summaries, erasure receipts. Reviews store a salted hash of the reviewer's
+phone, never the number. The same GSI1 that enforces the weekly quota (`REVIEWER#<hash>`) and
+lists a number's submissions (`CONV#<phone>`) drives erasure (`app/pipeline/erase.py`): no Scan is
+needed to find everything one person left behind. Conversations expire 12 months after the last
+message via the table TTL.
 
 **OpenSearch** index `businesses`: edge-ngram names (typeahead), reviewer-spoken names, address,
 city, keywords aggregated from reviews, summary headline/praise, geo point. Query is a

@@ -116,6 +116,22 @@ def download_file(key: str, path: Path) -> Path:
     return path
 
 
+def delete_prefix(prefix: str) -> int:
+    """Delete every object under `prefix` (e.g. one submission's folder). Returns the count."""
+    if not prefix or not prefix.endswith("/"):
+        raise ValueError("delete_prefix needs a folder-style prefix ending in '/'")
+    bucket = get_settings().media_bucket
+    deleted = 0
+    for page in _client().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        keys = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+        for i in range(0, len(keys), 1000):
+            _client().delete_objects(
+                Bucket=bucket, Delete={"Objects": keys[i : i + 1000], "Quiet": True}
+            )
+        deleted += len(keys)
+    return deleted
+
+
 def presigned_url(key: str, expires: int = 3600) -> str:
     return _client().generate_presigned_url(
         "get_object",
