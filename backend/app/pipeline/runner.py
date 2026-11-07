@@ -432,13 +432,20 @@ def _wants_vendors(active: Submission, text: str) -> bool:
     return False
 
 
-def _discover(conv: Conversation, text: str, *, footer: str | None = None) -> None:
-    """Answer a vendor question and remember the chat on the conversation."""
+def _discover(
+    conv: Conversation,
+    text: str,
+    *,
+    footer: str | None = None,
+    remember_as: str | None = None,
+) -> None:
+    """Answer a vendor question and remember the chat on the conversation. `remember_as` is the
+    request to keep for a later location re-run when `text` is a wrapper around it."""
     phone = conv.phone
     if not _models_ready():
         # No agent without the model key: a plain search still beats the intro text.
         try:
-            hits = opensearch.search(text, country=conv.profile_country, limit=3)
+            hits = opensearch.search(remember_as or text, country=conv.profile_country, limit=3)
         except Exception:  # noqa: BLE001
             log.exception("discovery fallback search failed")
             hits = []
@@ -448,7 +455,7 @@ def _discover(conv: Conversation, text: str, *, footer: str | None = None) -> No
         site = get_settings().public_site_url.removeprefix("https://")
         wa.send_text(phone, DISCOVERY_LIMIT_MSG.format(site=site) + (footer or ""))
         return
-    outcome = discover.run_discovery_turn(conv, text)
+    outcome = discover.run_discovery_turn(conv, text, remember_as=remember_as)
     log.info(
         "discovery for %s: steps=%s searched=%s options=%d",
         phone_label(phone),
@@ -478,6 +485,7 @@ def _handle_location(conv: Conversation, loc: dict, active: Submission | None) -
             conv,
             f"I just shared my location. Same request, near me: {session.last_query}",
             footer=_discovery_footer(active),
+            remember_as=session.last_query,
         )
         return
     wa.send_text(

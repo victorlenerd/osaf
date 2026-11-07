@@ -359,3 +359,54 @@ def test_search_reports_distance_when_near(monkeypatch):
     rows = opensearch.search("x", near=(6.45, 3.47, 5))
     assert rows[0]["distance_km"] == pytest.approx(1.1, abs=0.05)
     assert "distance_km" not in opensearch.search("x")[0]
+
+
+def test_remember_as_is_stored_instead_of_the_wrapper_text():
+    chat = ScriptedChat(
+        [
+            reply(tool_calls=[tool_call("search_vendors", {"query": "suya"})]),
+            reply(tool_calls=[tool_call("reply", {"message": "m"}, "c2")]),
+        ]
+    )
+    out = discover.run_discovery_turn(
+        _conv(),
+        "I just shared my location. Same request, near me: suya spots",
+        chat=chat,
+        search_fn=Searches([SUYA]),
+        remember_as="suya spots",
+    )
+    assert out.session.last_query == "suya spots"
+    assert "Same request" in json.loads(chat.calls[0]["messages"][1]["content"])["message"]
+
+
+def test_failed_reply_after_google_falls_back_to_the_google_listings():
+    bad = {"message": "1. *Invented*", "options": ["nope"]}
+    found = [
+        PlaceCandidate(place_id="g1", name="Tailor Hub", formatted_address="Wuse 2, Abuja"),
+        PlaceCandidate(
+            place_id="g2",
+            name="Closed Tailor",
+            formatted_address="Wuse",
+            business_status="CLOSED_PERMANENTLY",
+        ),
+    ]
+    chat = ScriptedChat(
+        [
+            reply(tool_calls=[tool_call("search_vendors", {"query": "tailor"})]),
+            reply(
+                tool_calls=[
+                    tool_call("search_google", {"query": "tailor", "region_code": "NG"}, "c2")
+                ]
+            ),
+            reply(tool_calls=[tool_call("reply", bad, "c3")]),
+            reply(tool_calls=[tool_call("reply", {**bad, "options": ["g2"]}, "c4")]),
+        ]
+    )
+    out = discover.run_discovery_turn(
+        _conv(), "tailor", chat=chat, search_fn=Searches([]), google_fn=lambda q, r: found
+    )
+    assert "1. *Tailor Hub*" in out.message and "not yet reviewed on Afefehub" in out.message
+    assert "Closed Tailor" not in out.message and out.message != discover.NO_MATCH_MSG
+    # a closed listing is not a valid option either
+    assert "not returned by any tool" in _tool_results(chat, 3)[-1]["problems"][0]
+    assert [(v.n, v.id, v.source) for v in out.session.shown] == [(1, "g1", "google")]

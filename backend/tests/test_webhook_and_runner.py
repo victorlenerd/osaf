@@ -192,11 +192,11 @@ def world(monkeypatch):
     # answer, and a discovery turn is recorded instead of run, unless a test says otherwise.
     monkeypatch.setattr(runner.discover, "classify_intent", lambda text, q: "answer")
 
-    def fake_turn(conv, text):
+    def fake_turn(conv, text, remember_as=None):
         events.append(f"discover:{text}")
         return runner.discover.DiscoveryOutcome(
             message=f"vendors for {text}",
-            session=runner.discover.DiscoverySession(last_query=text),
+            session=runner.discover.DiscoverySession(last_query=remember_as or text),
             searched=True,
         )
 
@@ -1212,6 +1212,11 @@ def test_location_pin_reruns_the_last_search_near_it(disco):
     conv = store.convs[PHONE]
     assert (conv.last_location.lat, conv.last_location.lng) == (6.4474, 3.4723)
     assert events[-1] == "discover:I just shared my location. Same request, near me: suya spots"
+    # a second pin re-runs the original request, not the wrapper around it
+    loc2 = {"type": "location", "location": {"latitude": 6.5, "longitude": 3.4}}
+    runner.process_inbound(PHONE, loc2)
+    assert events[-1] == "discover:I just shared my location. Same request, near me: suya spots"
+    assert store.convs[PHONE].discovery.last_query == "suya spots"
 
 
 def test_location_pin_without_a_search_asks_what_for(disco):

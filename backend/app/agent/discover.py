@@ -110,6 +110,17 @@ def _vendor_row(r: dict) -> dict:
     return row
 
 
+def format_google_results(places_found: list[PlaceCandidate], *, limit: int = 3) -> str:
+    """A plain numbered list of Google listings, used when the agent did not finish a reply."""
+    lines = ["Nothing reviewed on Afefehub for that yet, but Google lists these:"]
+    for i, c in enumerate(places_found[:limit], start=1):
+        lines.append(f"\n{i}. *{c.name}*, {c.formatted_address}\n(not yet reviewed on Afefehub)")
+    lines.append(
+        "\nBeen to one? Send me a voice note about your visit and it becomes the first review."
+    )
+    return "\n".join(lines)
+
+
 def format_results(rows: list[dict], *, limit: int = 3) -> str:
     """A plain numbered list of search hits, used when the agent cannot run or did not finish."""
     if not rows:
@@ -188,7 +199,11 @@ def run_discovery_turn(
     search_fn: Callable[..., list[dict]] | None = None,
     details_fn: Callable[[str], dict | None] | None = None,
     google_fn: Callable[[str, str], list[PlaceCandidate]] | None = None,
+    remember_as: str | None = None,
 ) -> DiscoveryOutcome:
+    """`text` is what the model reads. `remember_as` is the request to store as last_query when
+    it differs, e.g. a location re-run whose text wraps the original request: storing the
+    wrapper would nest it again on every new pin."""
     settings = get_settings()
     chat = chat or get_meta().chat
     search_fn = search_fn or _default_search
@@ -222,6 +237,7 @@ def run_discovery_turn(
     # Everything a reply may point at: options shown earlier plus what tools return now.
     known: dict[str, ShownVendor] = {v.id: v for v in prior.shown}
     results_this_turn: list[dict] = []
+    google_this_turn: list[PlaceCandidate] = []
     trace: list[dict] = []
     searches = google_calls = 0
     searched_empty = False
@@ -234,7 +250,7 @@ def run_discovery_turn(
         session = DiscoverySession(
             turns=turns[-MAX_TURNS_KEPT:],
             shown=options if options else prior.shown,
-            last_query=text[:200] if searches else prior.last_query,
+            last_query=(remember_as or text)[:200] if searches else prior.last_query,
             updated_at=now_iso(),
         )
         return DiscoveryOutcome(
@@ -249,6 +265,15 @@ def run_discovery_turn(
                 [
                     ShownVendor(n=i, id=r["business_id"], name=r["name"])
                     for i, r in enumerate(rows, start=1)
+                ],
+            )
+        if google_this_turn:
+            listed = google_this_turn[:3]
+            return done(
+                format_google_results(listed),
+                [
+                    ShownVendor(n=i, id=c.place_id, name=c.name, source="google")
+                    for i, c in enumerate(listed, start=1)
                 ],
             )
         return done(NO_MATCH_MSG if searched_empty else FALLBACK_MSG, None)
@@ -345,10 +370,12 @@ def run_discovery_turn(
                         log.warning("discovery google lookup failed: %r", e)
                         result = {"error": "Google lookup failed"}
                     else:
-                        for c in found:
+                        open_now = [c for c in found if c.business_status in (None, "OPERATIONAL")]
+                        for c in open_now:
                             known[c.place_id] = ShownVendor(
                                 n=0, id=c.place_id, name=c.name, source="google"
                             )
+                        google_this_turn.extend(open_now)
                         result = {
                             "not_reviewed_on_afefehub": True,
                             "results": [
@@ -357,8 +384,7 @@ def run_discovery_turn(
                                     "name": c.name,
                                     "address": c.formatted_address,
                                 }
-                                for c in found
-                                if c.business_status in (None, "OPERATIONAL")
+                                for c in open_now
                             ],
                         }
 
