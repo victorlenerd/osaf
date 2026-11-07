@@ -114,7 +114,7 @@ will start):
 for name in MODEL_API_KEY GOOGLE_PLACES_API_KEY WHATSAPP_ACCESS_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_VERIFY_TOKEN META_APP_SECRET PHONE_HASH_SALT; do
   aws ssm put-parameter --name /afefehub/prod/$name --type SecureString --overwrite --value "$(read -rs "?$name: " v; echo "$v")"
 done
-# optional, only for publishing the weekly Instagram carousel (weekly_highlights.py --publish):
+# optional, only for publishing the weekly Instagram Reel (weekly_highlights.py --publish):
 for name in IG_USER_ID IG_ACCESS_TOKEN; do
   aws ssm put-parameter --name /afefehub/prod/$name --type SecureString --overwrite --value "$(read -rs "?$name: " v; echo "$v")"
 done

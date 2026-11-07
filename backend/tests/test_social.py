@@ -621,3 +621,168 @@ def test_permalink_failure_after_publish_is_tolerated():
     respx.post(f"{G}/1789/media_publish").mock(return_value=httpx.Response(200, json={"id": "m1"}))
     respx.get(f"{G}/m1").mock(return_value=httpx.Response(500, text="oops"))
     assert ig.publish_carousel(_client(), ["u1", "u2"], "c", sleep=lambda s: None) == ("m1", "")
+
+
+@respx.mock
+def test_publish_reel_sends_one_reels_container_then_publishes():
+    media = respx.post(f"{G}/1789/media").mock(return_value=httpx.Response(200, json={"id": "rc"}))
+    respx.get(f"{G}/rc").mock(
+        side_effect=[
+            httpx.Response(200, json={"status_code": "IN_PROGRESS"}),
+            httpx.Response(200, json={"status_code": "FINISHED"}),
+        ]
+    )
+    pub = respx.post(f"{G}/1789/media_publish").mock(
+        return_value=httpx.Response(200, json={"id": "m7"})
+    )
+    respx.get(f"{G}/m7").mock(
+        return_value=httpx.Response(200, json={"permalink": "https://www.instagram.com/reel/R/"})
+    )
+    slept: list[float] = []
+    out = ig.publish_reel(
+        _client(), "https://s3/reel.mp4", "Week", cover_url="https://s3/c.jpg", sleep=slept.append
+    )
+    assert out == ("m7", "https://www.instagram.com/reel/R/")
+    body = dict(httpx.QueryParams(media.calls.last.request.content.decode()))
+    assert body == {
+        "media_type": "REELS",
+        "video_url": "https://s3/reel.mp4",
+        "caption": "Week",
+        "share_to_feed": "true",
+        "cover_url": "https://s3/c.jpg",
+    }
+    assert len(media.calls) == 1 and slept == [10]
+    assert dict(httpx.QueryParams(pub.calls.last.request.content.decode())) == {"creation_id": "rc"}
+
+
+# --------------------------------------------------------------------- reel
+import math  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import wave  # noqa: E402
+from array import array  # noqa: E402
+
+from app.social import audio as au  # noqa: E402
+from app.social import reel as rl  # noqa: E402
+
+needs_ffmpeg = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="ffmpeg not installed"
+)
+
+
+def test_candidate_knows_where_the_audio_is():
+    r = review()
+    r.audio_s3_key = "submissions/sub-r1/voice.m4a"
+    c = to_candidate(r)
+    assert c.submission_id == "sub-r1"
+    assert au.s3_audio_keys(c) == [
+        "submissions/sub-r1/voice.m4a",
+        "submissions/sub-r1/audio.wav",
+        "submissions/sub-r1/voice.ogg",
+    ]
+    c.audio_s3_key, c.video_s3_key = None, "submissions/sub-r1/source.mp4"
+    assert au.s3_audio_keys(c)[0] == "submissions/sub-r1/source.mp4"
+
+
+def test_clip_window_ends_on_a_turn_boundary():
+    turns = [(1_500, 6_000), (6_400, 12_000), (12_500, 30_000)]
+    assert au.clip_window(40_000, turns, 15_000) == (1_300, 12_000)
+    # one turn longer than the limit: hard cut at the limit
+    assert au.clip_window(40_000, [(0, 35_000)], 15_000) == (0, 15_000)
+    # no transcript: from the top, capped by the audio itself
+    assert au.clip_window(8_000, [], 15_000) == (0, 8_000)
+    # a fitting turn too short to stand alone: use the whole budget
+    assert au.clip_window(40_000, [(0, 1_000), (1_200, 30_000)], 15_000) == (0, 15_000)
+
+
+def test_turns_from_transcript_skips_untimed_turns():
+    raw = {
+        "transcript": "a b",
+        "turns": [
+            {"startMs": 100, "endMs": 900, "transcript": "a"},
+            {"transcript": "b"},
+            {"startMs": 50, "endMs": 50, "transcript": "c"},
+        ],
+    }
+    assert au.turns_from_transcript(raw) == [(100, 900)]
+    assert au.turns_from_transcript(None) == []
+
+
+def _tone(seconds: float, gaps: tuple[tuple[float, float], ...] = ()) -> bytes:
+    n = int(seconds * au.RATE)
+    s = array("h", (int(12_000 * math.sin(2 * math.pi * 220 * i / au.RATE)) for i in range(n)))
+    for a, b in gaps:
+        for i in range(int(a * au.RATE), int(b * au.RATE)):
+            s[i] = 0
+    return s.tobytes()
+
+
+def test_peaks_shape_and_silence():
+    lv = au.peaks(_tone(2.0, gaps=((0.5, 1.0),)), 40)
+    assert len(lv) == 40 and max(lv) == pytest.approx(1.0) and min(lv) >= 0
+    assert all(v == 0 for v in lv[11:19]) and all(v > 0.9 for v in lv[:9])
+    assert au.peaks(bytes(1000), 10) == [0.0] * 10
+    assert au.peaks(b"", 5) == [0.0] * 5
+
+
+def test_clip_budget_keeps_the_reel_short():
+    assert rl.clip_budget(1) == rl.MAX_CLIP_S
+    five = rl.clip_budget(5)
+    assert rl.COVER_S + rl.CTA_S + 5 * (five + rl.TAIL_S) <= rl.MAX_TOTAL_S + 1e-6
+    assert rl.clip_budget(40) == rl.MIN_CLIP_S
+
+
+def test_review_scene_waveform_fills_as_it_plays():
+    w = window_from_dates("2026-10-20", "2026-10-27")
+    base = rl.render_reel_card(_cand(1, "Proper amala."), w, flag=None, site_url="afefehub.com")
+    assert base.size == (rl.RW, rl.RH)
+    clip = au.Clip("r1", 0, 2000, _tone(2.0))
+    sc = rl.ReviewScene(base, clip)
+    mid_y = rl.WAVE_Y + rl.WAVE_H // 2
+    first_bar_x = sc.x0 + rl.BAR_W // 2
+    last_bar_x = sc.x0 + (sc.n_bars - 1) * (rl.BAR_W + rl.BAR_GAP) + rl.BAR_W // 2
+    start, end = sc.frame(0.0), sc.frame(2.0)
+
+    def dark(img, x):
+        return max(img.getpixel((x, mid_y))) < 40  # ink, not the unplayed grey
+
+    assert not dark(start, first_bar_x)  # nothing played yet
+    assert dark(end, first_bar_x) and dark(end, last_bar_x)  # all played at the end
+    assert rl.timecode(65.9) == "01:05"
+
+
+@needs_ffmpeg
+def test_render_reel_end_to_end(tmp_path):
+    src = tmp_path / "r1.wav"
+    with wave.open(str(src), "wb") as f:
+        f.setnchannels(1), f.setsampwidth(2), f.setframerate(au.RATE)
+        f.writeframes(_tone(4.0, gaps=((1.0, 1.5),)))
+    c1, c2 = _cand(1, "Proper Surulere amala worth the queue."), _cand(2, "Fine coffee.", "Kigali")
+    a = au.local_audio(c1, tmp_path)
+    assert a is not None and abs(a.duration_ms - 4000) < 50
+    assert au.local_audio(c2, tmp_path) is None
+    clip = au.make_clip(a, max_s=3.0)
+    assert (clip.start_ms, clip.end_ms) == (0, 3000)
+    assert abs(clip.duration_s - 3.0) < 0.05
+
+    w = window_from_dates("2026-10-20", "2026-10-27")
+    res = rl.render_reel([c1], [clip], w, tmp_path / "out", flag_fetch=False)
+    want = rl.COVER_S + clip.duration_s + rl.TAIL_S + rl.CTA_S
+    assert abs(res.duration_s - want) < 0.1
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries",
+         "stream=codec_type,codec_name,width,height,sample_rate:format=duration",
+         "-of", "json", str(res.video)],
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    info = json.loads(probe.stdout)
+    streams = {s["codec_type"]: s for s in info["streams"]}
+    assert streams["video"]["codec_name"] == "h264"
+    assert (streams["video"]["width"], streams["video"]["height"]) == (1080, 1920)
+    assert streams["audio"]["codec_name"] == "aac" and streams["audio"]["sample_rate"] == "48000"
+    assert abs(float(info["format"]["duration"]) - want) < 0.15
+    with Image.open(res.cover) as im:
+        assert im.size == (1080, 1920) and im.format == "JPEG"
+    assert res.preview.exists()
+    with pytest.raises(ValueError):
+        rl.render_reel([c1, c2], [clip], w, tmp_path / "bad")
