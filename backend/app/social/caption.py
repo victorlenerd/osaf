@@ -1,11 +1,11 @@
-"""The Instagram caption that goes with the carousel. Deterministic template; the only model
-input is an optional one-line hook."""
+"""Instagram captions: the weekly carousel's, and each single-review Reel's. Deterministic
+templates; the only model input is the carousel's optional one-line hook."""
 
 from __future__ import annotations
 
 import re
 
-from app.social.candidates import Candidate, Window
+from app.social.candidates import Candidate, Window, window_label
 from app.social.flags import flag_emoji
 
 MAX_CAPTION_CHARS = 2200
@@ -44,6 +44,27 @@ def _city_tags(picks: list[Candidate], limit: int = 3) -> list[str]:
     return out
 
 
+def how_to_submit(wa_number: str = "") -> str:
+    if wa_number:
+        return (
+            "Been somewhere worth talking about? Post a public reel and WhatsApp the link to "
+            f"{wa_number}, or just send us a voice note. We transcribe it and add it to the "
+            "business page."
+        )
+    return (
+        "Been somewhere worth talking about? Post a public reel and WhatsApp us the link, "
+        "or just send us a voice note. We transcribe it and add it to the business page."
+    )
+
+
+def _tags(picks: list[Candidate], hashtags: list[str] | None) -> str:
+    tags = list(hashtags if hashtags is not None else DEFAULT_HASHTAGS)
+    for t in _city_tags(picks):
+        if t not in tags:
+            tags.append(t)
+    return " ".join(f"#{t}" for t in tags[:MAX_HASHTAGS])
+
+
 def build_caption(
     picks: list[Candidate],
     window: Window,
@@ -54,23 +75,8 @@ def build_caption(
     hashtags: list[str] | None = None,
     max_quote: int = 120,
 ) -> str:
-    tags = list(hashtags if hashtags is not None else DEFAULT_HASHTAGS)
-    for t in _city_tags(picks):
-        if t not in tags:
-            tags.append(t)
-    tags = tags[:MAX_HASHTAGS]
-
-    if wa_number:
-        how = (
-            "Been somewhere worth talking about? Post a public reel and WhatsApp the link to "
-            f"{wa_number}, or just send us a voice note. We transcribe it and add it to the "
-            "business page."
-        )
-    else:
-        how = (
-            "Been somewhere worth talking about? Post a public reel and WhatsApp us the link, "
-            "or just send us a voice note. We transcribe it and add it to the business page."
-        )
+    tags = _tags(picks, hashtags)
+    how = how_to_submit(wa_number)
 
     for limit in (max_quote, 80, 50):
         lines = []
@@ -84,12 +90,43 @@ def build_caption(
                 "\n".join(lines),
                 how,
                 site_url,
-                " ".join(f"#{t}" for t in tags),
+                tags,
             ]
         )
         if len(text) <= MAX_CAPTION_CHARS:
             return text
     raise ValueError(f"caption is {len(text)} chars even with short quotes; fewer picks needed")
+
+
+def build_review_caption(
+    cand: Candidate,
+    window: Window,
+    *,
+    wa_number: str = "",
+    site_url: str = "afefehub.com",
+    hashtags: list[str] | None = None,
+) -> str:
+    """One review's Reel: who and where, their summary, what was good, then the same how-to,
+    site and hashtags as the carousel. First name and flag only, like the slides."""
+    flag = flag_emoji(cand.reviewer_country)
+    where = f"{cand.business_name}, {cand.city}" if cand.city else cand.business_name
+    head = f"{flag + ' ' if flag else ''}{cand.reviewer_first_name} on {where}"
+    for limit in (400, 200, 100):
+        good = "\n".join(f"+ {_quote(g, 120)}" for g in cand.good[:3])
+        parts = [head, f"“{_quote(cand.summary, limit)}”"]
+        if good:
+            parts.append(good)
+        parts += [
+            f"From this week's Reviews of the week ({window_label(window)}). "
+            "Sound on to hear it in their own words.",
+            how_to_submit(wa_number),
+            site_url,
+            _tags([cand], hashtags),
+        ]
+        text = "\n\n".join(parts)
+        if len(text) <= MAX_CAPTION_CHARS:
+            return text
+    raise ValueError(f"review caption is {len(text)} chars even with a short quote")
 
 
 def assert_caption_ok(text: str) -> None:
