@@ -21,6 +21,6 @@ export const LEGAL = {
   minimumAge: 18,
   /** Dates shown at the top of each document (ISO). Bump when the text changes. */
   termsEffective: "2026-10-31",
-  privacyEffective: "2026-10-31",
+  privacyEffective: "2026-11-06",
   siteUrl: "https://afefehub.com",
 } as const;
