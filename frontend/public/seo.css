@@ -1,0 +1,63 @@
+/* Styles for the backend-rendered pages (/b/<slug>, /places/...). Same palette as globals.css:
+   black on yellow, white cards. No build step: these pages are written by the API, not Next. */
+@font-face { font-family: "Lato"; src: url("/fonts/Lato-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Lato"; src: url("/fonts/Lato-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+:root {
+  --bg: #ffc72c; --card: #ffffff; --fg: #0a0a0a; --soft: #2b2b2b; --muted: #5c5c5c;
+  --line: rgb(10 10 10 / 0.14); --good: #2f8f5b; --mixed: #9a4a00; --bad: #c43d3d; --star: #e0701a;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+body { margin: 0; font: 16px/1.55 "Lato", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; min-height: 100dvh; display: flex; flex-direction: column; }
+a { color: inherit; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+img { max-width: 100%; height: auto; }
+.wrap { width: 100%; max-width: 64rem; margin: 0 auto; padding: 0 16px; }
+main.wrap { flex: 1; padding-bottom: 64px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.site-header { border-bottom: 1px solid var(--line); }
+.site-header .row { min-height: 64px; }
+.logo img { display: block; height: 32px; width: auto; }
+.nav { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
+.nav a { text-decoration: none; font-weight: 700; }
+.nav a:hover { text-decoration: underline; }
+.site-footer { border-top: 1px solid var(--line); font-size: 14px; color: var(--soft); padding: 20px 0; }
+.site-footer p { margin: 0; }
+.crumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 24px 0 0; font-size: 14px; color: var(--soft); }
+.crumbs li + li::before { content: "/"; margin-right: 4px; opacity: .6; }
+.biz-head { margin: 12px 0 24px; }
+.eyebrow { margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--soft); }
+h1 { font-size: clamp(30px, 6vw, 48px); line-height: 1.1; letter-spacing: -0.01em; margin: 6px 0 8px; overflow-wrap: anywhere; }
+h2 { font-size: 22px; line-height: 1.25; margin: 0 0 12px; }
+h3 { font-size: 15px; margin: 0 0 6px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.stats { margin: 8px 0 0; font-size: 15px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 20px; margin: 0 0 20px; box-shadow: 0 1px 0 var(--line); }
+.lead { font-size: 18px; line-height: 1.55; margin: 0 0 12px; }
+.headline { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
+.cols { display: grid; gap: 12px 24px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.cols h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--soft); margin-bottom: 6px; }
+.cols3 { columns: 3 180px; }
+ul { margin: 0 0 12px; padding-left: 20px; }
+ul.links { list-style: none; padding: 0; }
+ul.links li { margin: 4px 0; break-inside: avoid; }
+.review header p { margin: 0 0 4px; }
+.review .one-line { font-size: 18px; font-weight: 700; margin: 10px 0 12px; }
+.verdict { font-size: 14px; }
+.stars { color: var(--star); letter-spacing: 1px; }
+.rec { font-weight: 700; }
+.rec-yes { color: var(--good); } .rec-no { color: var(--bad); } .rec-maybe { color: var(--mixed); }
+.instagram-media { margin: 12px 0 0 !important; max-width: 420px !important; min-width: 0 !important; width: 100% !important; }
+audio { width: 100%; max-width: 420px; margin-top: 12px; }
+ol.ranked { list-style: none; padding: 0; margin: 0; counter-reset: rank; }
+ol.ranked li { counter-increment: rank; position: relative; padding-left: 64px; }
+ol.ranked li::before { content: counter(rank); position: absolute; left: 20px; top: 20px; width: 32px; height: 32px; border-radius: 999px; background: var(--fg); color: var(--bg); font-weight: 700; display: grid; place-items: center; }
+ol.ranked h3 { font-size: 18px; }
+ol.ranked p { margin: 4px 0 0; }
+.howto { margin-top: 32px; }
+.wa { display: inline-block; background: #25d366; color: #062b14; font-weight: 700; padding: 8px 16px; border-radius: 999px; text-decoration: none; }
+#google-reviews h2 { margin-top: 0; }
+#google-reviews .g-review { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+#google-reviews .g-review p { margin: 4px 0; }

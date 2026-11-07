@@ -133,6 +133,30 @@ variable "waf_places_rate_limit" {
   default     = 100
 }
 
+variable "waf_mcp_rate_limit" {
+  description = "Max requests per source IP per 5 minutes to the public MCP server (/mcp)."
+  type        = number
+  default     = 600
+}
+
+variable "whatsapp_public_number" {
+  description = "Afefehub WhatsApp number in display form, shown on rendered pages and by the MCP server."
+  type        = string
+  default     = "+234 803 174 9669"
+}
+
+variable "indexnow_key" {
+  description = "IndexNow key (8-128 hex chars). Published at https://<domain>/<key>.txt; empty disables pings."
+  type        = string
+  default     = ""
+}
+
+variable "render_site_schedule" {
+  description = "EventBridge Scheduler expression for the nightly full re-render of crawlable pages."
+  type        = string
+  default     = "cron(30 2 * * ? *)"
+}
+
 variable "waf_api_rate_limit" {
   description = "Max requests per source IP per 5 minutes to /api/* overall."
   type        = number

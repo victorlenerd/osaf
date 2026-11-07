@@ -11,6 +11,7 @@ PK / SK layout
   BIZ#<id>            REV#<created_at>#<rid>     Review       GSI1: REVIEWER#<hash>/REV#<created>
   REVIEW#<rid>        META                       pointer {business_id, sk} for lookup by id
   BIZ#<id>            SUMMARY                    BusinessSummary
+  SLUG#<slug>         META                       pointer {business_id} for /b/<slug> lookups
   GPLACE#<place_id>   SUMMARY                    GoogleReviewSummary (TTL; raw Google reviews
                                                  are never stored)
   ERASURE#<ref>       META                       proof that a reviewer's data was erased
@@ -259,6 +260,9 @@ def upsert_business_on_publish(ext: ReviewExtraction) -> Business:
     add_names = {"#rc": "recommend_counts", "#r": ext.recommend, "#kw": "keywords"}
     add_parts = ["review_count :one", "#rc.#r :one"]
     vals: dict[str, Any] = {":one": 1}
+    if ext.rating:
+        add_parts += ["rating_sum :rating", "rating_count :one"]
+        vals[":rating"] = ext.rating
     for i, kw in enumerate(dict.fromkeys(k.strip().lower() for k in ext.keywords if k.strip())):
         add_names[f"#k{i}"] = kw
         add_parts.append(f"#kw.#k{i} :one")
@@ -270,7 +274,26 @@ def upsert_business_on_publish(ext: ReviewExtraction) -> Business:
     )
     biz = get_business(b.place_id)
     assert biz is not None
+    put_slug_pointer(biz)
     return biz
+
+
+def put_slug_pointer(b: Business) -> None:
+    """Idempotent: the slug only depends on the id, name and city, which never change."""
+    _table().put_item(Item={"PK": f"SLUG#{b.slug}", "SK": "META", "business_id": b.business_id})
+
+
+def get_business_by_slug(slug: str) -> Business | None:
+    r = _table().get_item(Key={"PK": f"SLUG#{slug}", "SK": "META"})
+    if "Item" not in r:
+        return None
+    b = get_business(str(r["Item"]["business_id"]))
+    return b if b and b.slug == slug else None
+
+
+def list_all_businesses() -> list[Business]:
+    """Every business, through GSI1 (one query per category; the task role has no Scan)."""
+    return list_businesses_updated_since("")
 
 
 def list_businesses_by_category(category: str, limit: int = 50) -> list[Business]:
@@ -535,10 +558,10 @@ def mark_author_verified(r: Review) -> None:
 
 
 def rebuild_business_counters(business_id: str) -> Business | None:
-    """Recompute review_count, recommend_counts, keywords and names_as_said from the published
-    reviews still stored under the business. Returns None when no review of any status is
-    left (the caller should then delete the business); hidden reviews keep the business but
-    do not count."""
+    """Recompute review_count, recommend_counts, rating totals, keywords and names_as_said from
+    the published reviews still stored under the business. Returns None when no review of any
+    status is left (the caller should then delete the business); hidden reviews keep the
+    business but do not count."""
     stored = list_reviews(business_id, limit=1000)
     if not stored:
         return None
@@ -546,9 +569,13 @@ def rebuild_business_counters(business_id: str) -> Business | None:
     recommend = {"yes": 0, "no": 0, "maybe": 0}
     keywords: dict[str, int] = {}
     names: list[str] = []
+    rating_sum = rating_count = 0
     for r in reviews:
         ext = r.extraction
         recommend[ext.recommend] = recommend.get(ext.recommend, 0) + 1
+        if ext.rating:
+            rating_sum += ext.rating
+            rating_count += 1
         for kw in dict.fromkeys(k.strip().lower() for k in ext.keywords if k.strip()):
             keywords[kw] = keywords.get(kw, 0) + 1
         if ext.business_name_as_said and ext.business_name_as_said not in names:
@@ -557,9 +584,12 @@ def rebuild_business_counters(business_id: str) -> Business | None:
         Key={"PK": f"BIZ#{business_id}", "SK": "META"},
         # updated_at and GSI1SK are left alone: they mean "last reviewed", not "last changed".
         UpdateExpression=(
-            "SET review_count = :n, recommend_counts = :rc, keywords = :kw, names_as_said = :names"
+            "SET review_count = :n, recommend_counts = :rc, keywords = :kw, names_as_said = :names,"
+            " rating_sum = :rs, rating_count = :rn"
         ),
         ExpressionAttributeValues={
+            ":rs": rating_sum,
+            ":rn": rating_count,
             ":n": len(reviews),
             ":rc": recommend,
             ":kw": keywords,
@@ -574,7 +604,11 @@ def put_erasure_receipt(reference: str, record: dict) -> None:
 
 
 def delete_business(business_id: str) -> int:
-    """Remove a business and everything under its partition (reviews, summary). Returns count."""
+    """Remove a business and everything under its partition (reviews, summary), and its slug
+    pointer. Returns count."""
+    existing = get_business(business_id)
+    if existing:
+        _delete(f"SLUG#{existing.slug}", "META")
     pk = f"BIZ#{business_id}"
     n = 0
     start = None

@@ -66,6 +66,18 @@ The programme ships switched off: `payouts_enabled = false` in Terraform (backen
 - [ ] WhatsApp Manager: create and get approved the utility template `payout_sent` (language `en`) with four body variables: name, amount, month, destination, e.g. "Hi {{1}}, your Afefehub payout of {{2}} for {{3}} has been sent to {{4}}. Thank you for reviewing!".
 - [ ] Publish the new Terms (points tiers, opt-in ENTER, monthly pro-rata pools, Nigeria-only transfers, duplicates, bans) and Privacy additions (bank details, fingerprints, Instagram username lookup, ban hashes and payment records kept after erasure) at least 14 days before the first window opens.
 - [ ] Monthly: `scripts/payout.py export`, decide, `settle --apply`, transfer, `mark-paid --apply`. Delete the spreadsheet and CSVs afterwards: they hold bank details.
+### Discovery (crawlable pages, AI agents)
+
+Rollout, in this order (each step is safe on its own):
+
+- [ ] `terraform apply` (task-role access to the site bucket's backend-owned paths and the CloudFront invalidation, env vars `SITE_BUCKET` / `CLOUDFRONT_DISTRIBUTION_ID` / `WHATSAPP_PUBLIC_NUMBER` / `INDEXNOW_KEY`, the `/mcp` WAF rule, the nightly `render-site` schedule). Set `indexnow_key` in `prod.auto.tfvars` first (`openssl rand -hex 16`).
+- [ ] Roll the backend (`scripts/deploy_backend.sh`).
+- [ ] Backfill: run `python scripts/render_site.py` once in a one-off task (writes the `SLUG#` pointers, every page, sitemaps, llms.txt). Check `https://afefehub.com/sitemap.xml`, `/llms.txt` and one `/b/<slug>` page with `curl -A GPTBot`.
+- [ ] Deploy the site **only** with `scripts/deploy_site.sh` from now on: a bare `aws s3 sync out/ --delete` deletes every rendered page.
+- [ ] Google Search Console: Domain property (verification TXT in Route53, nothing else in the zone touched), submit `/sitemap.xml`, run the Rich Results Test on a business page.
+- [ ] Bing Webmaster Tools: import from Search Console, submit the sitemap (Bing feeds ChatGPT search, Copilot and DuckDuckGo).
+- [ ] Custom GPT "Afefehub" with Actions from `/api/openapi-public.json`, privacy URL `https://afefehub.com/privacy`; list the MCP server in the MCP Registry and submit it to the Claude connector directory.
+- [ ] Weekly: `python scripts/ai_visibility.py --out ai_visibility.jsonl` with whichever provider keys are available; monthly: Search Console coverage and rich-result errors.
 
 ### Infrastructure
 

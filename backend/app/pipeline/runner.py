@@ -88,6 +88,9 @@ def help_text() -> str:
 CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
 )
+# A star rating sent while confirming: "4", "4 stars", "4/5", "⭐⭐⭐⭐".
+RATING_REPLY = re.compile(r"^\s*([1-5])\s*(stars?|⭐|/\s*5|out of 5)?\s*[.!]*\s*$", re.I)
+STAR_EMOJI_REPLY = re.compile(r"^\s*(⭐\ufe0f?){1,5}\s*$")
 # Greetings and help requests get the intro; any other free text is a vendor question.
 HELP_WORDS = re.compile(
     r"^\s*(hi+|hello+|hey+|hiya|yo|good\s+(morning|afternoon|evening)|help|menu|start|info|"
@@ -378,6 +381,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             _extract_and_route(active, conv, latest_answer=text)
             return
         if active.state == SubmissionState.CONFIRMING:
+            stars = rating_from_reply(text)
+            if stars and active.extraction is not None:
+                active.extraction.rating = stars
+                s3.put_json(
+                    active.extraction.model_dump(), s3.Keys.extraction(active.submission_id)
+                )
+                _set_state(active, SubmissionState.EXTRACTING, f"rated {stars}/5; publishing")
+                publish.publish_submission(active, conv)
+                return
             if CONFIRM_WORDS.match(text):
                 _set_state(active, SubmissionState.EXTRACTING, "confirmed; publishing")
                 publish.publish_submission(active, conv)
@@ -432,6 +444,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
     wa.send_text(phone, help_text())
 
 
+def rating_from_reply(text: str) -> int | None:
+    """1-5 when the whole reply is a star rating, else None."""
+    if m := RATING_REPLY.match(text):
+        return int(m.group(1))
+    if STAR_EMOJI_REPLY.match(text):
+        return text.count("⭐")
+    return None
+
+
 # ---------------------------------------------------------------- vendor discovery
 DISCOVERY_LIMIT_MSG = (
     "You've asked me a lot today 🙏 I can look up more places for you tomorrow. Meanwhile you "
@@ -461,6 +482,8 @@ def _wants_vendors(active: Submission, text: str) -> bool:
     if active.state in (SubmissionState.AWAITING_CLARIFICATION, SubmissionState.CONFIRMING):
         if CONFIRM_WORDS.match(text) or discover.obviously_an_answer(text):
             return False
+        if active.state == SubmissionState.CONFIRMING and rating_from_reply(text):
+            return False  # "2 out of 5" is a star rating, never a vendor question
         return discover.classify_intent(text, active.pending_question) == "discover"
     if active.state == SubmissionState.AWAITING_VIDEO:
         # Nothing typed answers "send the video file", so only greetings get the nudge.
@@ -953,6 +976,15 @@ def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: st
     sub.extraction = ext
     s3.put_json(ext.model_dump(), s3.Keys.extraction(sub.submission_id))
     rec = {"yes": "Yes 👍", "no": "No 👎", "maybe": "Maybe 🤷"}[ext.recommend]
+    if ext.rating:
+        rating_line = f"Rating: {'⭐' * ext.rating} {ext.rating}/5\n\n"
+        reply_line = "Reply *OK* to publish, or tell me what to fix."
+    else:
+        rating_line = ""
+        reply_line = (
+            "Reply *1*-*5* to add a star rating and publish, *OK* to publish without stars, "
+            "or tell me what to fix."
+        )
     good = "\n".join(f"• {g}" for g in ext.good[:3]) or "• (nothing noted)"
     improve = "\n".join(f"• {g}" for g in ext.improve[:3]) or "• (nothing noted)"
     when = f" ({ext.visit.when_text})" if ext.visit.when_text else ""
@@ -962,7 +994,7 @@ def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: st
         f"🏷️ {ext.category.replace('_', ' ')}\n\n"
         f"👍 Good:\n{good}\n\n🔧 Could improve:\n{improve}\n\n"
         f"Recommend: {rec}\n\n"
-        "Reply *OK* to publish, or tell me what to fix."
+        f"{rating_line}{reply_line}"
     )
     sub.pending_question = summary
     _set_state(sub, SubmissionState.CONFIRMING)

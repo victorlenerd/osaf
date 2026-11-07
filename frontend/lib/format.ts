@@ -1,3 +1,15 @@
+/** Path of the crawlable page for a business, or the interactive page when the API gave no url. */
+export function businessHref(r: { business_id: string; url?: string }): string {
+  if (r.url) {
+    try {
+      return new URL(r.url).pathname;
+    } catch {
+      /* fall through */
+    }
+  }
+  return `/business?id=${encodeURIComponent(r.business_id)}`;
+}
+
 export function percent(rate: number): string {
   return `${Math.round(Math.max(0, Math.min(1, rate)) * 100)}%`;
 }

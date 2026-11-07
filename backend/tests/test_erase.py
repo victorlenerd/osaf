@@ -126,8 +126,26 @@ class FakeSearch:
         self.deleted.append(bid)
 
 
+class FakePages:
+    def __init__(self):
+        self.published: list[str] = []
+        self.removed: list[str] = []
+        self.fail = False
+
+    def publish_business_page(self, bid):
+        if self.fail:
+            raise RuntimeError("AccessDenied on site bucket")
+        self.published.append(bid)
+
+    def remove_business_page(self, bid):
+        if self.fail:
+            raise RuntimeError("AccessDenied on site bucket")
+        self.removed.append(bid)
+
+
 def _world(monkeypatch):
     db, s3, search = FakeDynamo(), FakeS3(), FakeSearch()
+    monkeypatch.setattr(erase, "seo_site", FakePages())
     monkeypatch.setattr(erase, "dynamo", db)
     monkeypatch.setattr(erase, "s3", s3)
     monkeypatch.setattr(erase, "opensearch", search)
@@ -292,3 +310,22 @@ def test_rebuild_counters_expression_and_empty_business(monkeypatch):
 
     items.clear()
     assert dynamo.rebuild_business_counters("x") is None and len(calls) == 1
+
+
+def test_erasure_rerenders_and_removes_public_pages(monkeypatch):
+    _world(monkeypatch)
+    erase.erase_reviewer(ADA)
+    assert erase.seo_site.published == ["shared"]
+    assert erase.seo_site.removed == ["solo"]
+
+
+def test_page_failure_fails_the_business_so_the_retry_reruns_it(monkeypatch):
+    """A page still showing an erased review is not done: it must surface for the retry."""
+    _world(monkeypatch)
+    erase.seo_site.fail = True
+    report = erase.erase_reviewer(ADA)
+    assert sorted(report.businesses_failed) == ["shared", "solo"]
+    erase.seo_site.fail = False
+    retry = erase.rebuild_businesses(report.businesses_failed)
+    assert not retry.businesses_failed
+    assert "solo" in erase.seo_site.removed

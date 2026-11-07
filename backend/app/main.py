@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.public import router as public_router
 from app.config import get_settings
+from app.mcp_server import http_app as mcp_http_app
+from app.mcp_server import server as mcp_server
 from app.pii import RedactPhoneNumbers
 from app.rewards.webhook import router as instagram_router
 from app.whatsapp.webhook import router as whatsapp_router
@@ -53,10 +55,12 @@ async def lifespan(app: FastAPI):
             fingerprint_index.ensure_index()
         except Exception:  # noqa: BLE001
             log.exception("could not ensure OpenSearch indexes at startup")
-    yield
+    async with mcp_server.session_manager.run():
+        yield
 
 
 app = FastAPI(title="Afefehub API", version="0.1.0", lifespan=lifespan)
+_mcp_app = mcp_http_app()  # builds the session manager the lifespan runs
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.public_site_url, "http://localhost:3000"],
@@ -72,3 +76,8 @@ app.include_router(public_router)
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "env": settings.env}
+
+
+# Public MCP server at /mcp. Mounted last and at the root so every route above wins and the
+# endpoint is exactly /mcp (a /mcp mount would answer at /mcp/ and redirect /mcp).
+app.mount("/", _mcp_app)

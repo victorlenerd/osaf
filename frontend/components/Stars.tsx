@@ -12,7 +12,7 @@ function Row({ size, color }: { size: number; color: string }) {
   );
 }
 
-/** Five-star rating row used for Google data (places and reviews). Partial stars are drawn by clipping a coloured row over a grey one. */
+/** Five-star rating row: Google data and Afefehub reviewer ratings. Partial stars are drawn by clipping a coloured row over a grey one. */
 export default function Stars({ rating, size = 14, withValue = false }: { rating: number | null; size?: number; withValue?: boolean }) {
   if (rating == null) return <span className="text-xs muted">No rating</span>;
   const value = Math.max(0, Math.min(5, rating));

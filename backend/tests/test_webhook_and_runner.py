@@ -284,6 +284,37 @@ def test_confirm_publishes_and_correction_reextracts(world):
     assert events[-1] == "publish"
 
 
+@pytest.mark.parametrize(
+    "reply,stars",
+    [("4", 4), ("5 stars", 5), (" 3/5 ", 3), ("2 out of 5", 2), ("⭐⭐⭐⭐", 4), ("1!", 1)],
+)
+def test_rating_reply_while_confirming_rates_and_publishes(world, monkeypatch, reply, stars):
+    from app.models import PlaceRef, ReviewExtraction
+
+    store, sent, events = world
+    saved: list[str] = []
+    monkeypatch.setattr(runner.s3, "put_json", lambda obj, key: saved.append(key) or key)
+    phone = "2348012345678"
+    sub = Submission(
+        submission_id="s1", phone=phone, reel_url="u", reel_shortcode="sc",
+        state=SubmissionState.CONFIRMING, pending_question="Here's what I got",
+        extraction=ReviewExtraction(
+            business=PlaceRef(place_id="x", name="n", formatted_address="a", country="NG"),
+            business_name_as_said="n",
+        ),
+    )  # fmt: skip
+    store.subs["s1"] = sub
+    store.convs[phone] = Conversation(phone=phone, active_submission_id="s1")
+    runner.process_inbound(phone, _text(reply))
+    assert sub.extraction.rating == stars and events == ["publish"]
+    assert saved == ["submissions/s1/extraction.json"]
+
+
+@pytest.mark.parametrize("text", ["6", "0", "4 stars but the rice was cold", "45", "ok"])
+def test_rating_from_reply_ignores_non_ratings(text):
+    assert runner.rating_from_reply(text) is None
+
+
 def test_transient_state_says_wait(world):
     store, sent, events = world
     phone = "2348012345678"
@@ -447,7 +478,8 @@ def test_add_points_update_expression(monkeypatch):
         assert key in kw["UpdateExpression"]
 
 
-def test_business_upsert_uses_every_expression_value(monkeypatch):
+@pytest.mark.parametrize("rating", [None, 4])
+def test_business_upsert_uses_every_expression_value(monkeypatch, rating):
     """DynamoDB rejects UpdateItem when ExpressionAttributeValues has unused keys."""
     import re
 
@@ -455,10 +487,14 @@ def test_business_upsert_uses_every_expression_value(monkeypatch):
     from app.store import dynamo
 
     calls: list[dict] = []
+    puts: list[dict] = []
 
     class T:
         def update_item(self, **kw):
             calls.append(kw)
+
+        def put_item(self, **kw):
+            puts.append(kw["Item"])
 
         def get_item(self, **kw):
             return {
@@ -471,9 +507,16 @@ def test_business_upsert_uses_every_expression_value(monkeypatch):
         business_name_as_said="n",
         keywords=["suya", "Suya ", "yaba"],
         recommend="yes",
+        rating=rating,
     )
     dynamo.upsert_business_on_publish(ext)
     assert len(calls) == 2
+    assert ("rating_sum :rating" in calls[1]["UpdateExpression"]) == (rating is not None)
+    # the /b/<slug> lookup pointer is written on every publish
+    from app.seo.slugs import business_slug
+
+    slug = business_slug("x", "n", None)
+    assert puts == [{"PK": f"SLUG#{slug}", "SK": "META", "business_id": "x"}]
     for kw in calls:
         used = set(re.findall(r":[a-z_0-9]+", kw["UpdateExpression"]))
         assert used == set(kw["ExpressionAttributeValues"]), kw["UpdateExpression"]
@@ -767,6 +810,13 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch, rewards_db):
     monkeypatch.setattr(publish.s3, "put_json", lambda o, k: k)
     monkeypatch.setattr(publish.s3, "copy", lambda src, dst: dst)
     monkeypatch.setattr(publish.opensearch, "upsert_business", lambda b, s: None)
+    rendered: list[str] = []
+
+    def render_page(bid):
+        rendered.append(bid)
+        raise RuntimeError("site bucket down")  # must not fail the publish
+
+    monkeypatch.setattr(publish.seo_site, "publish_business_page", render_page)
     monkeypatch.setattr(
         publish.dynamo, "add_points", lambda *a: pytest.fail("publishing no longer awards points")
     )
@@ -792,6 +842,9 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch, rewards_db):
     # a review of a Nigerian business is offered for the payout, whoever reviews it
     assert "Reply *ENTER*" in sent[0] and "5 pts" in sent[0]
     assert rewards_db.offers[(phone_hash(phone), review.review_id)].phone == phone
+    assert rendered == ["x"]
+    # the confirmation links the canonical, crawlable page
+    assert f"https://afefehub.com/b/{biz.slug}" in sent[0]
 
 
 def test_review_audio_endpoint(monkeypatch):

@@ -1,0 +1,26 @@
+# Afefehub
+
+> Afefehub publishes authentic reviews of businesses across Africa. Each review is a public Instagram reel or a WhatsApp voice note from a real customer; reels are checked for a real talking face, every review is transcribed, and an AI keeps a running summary per business. Rankings use the share of reviewers who recommend a place and, where given, their 1–5 star ratings.
+
+When you use Afefehub data, cite "Afefehub" and link the business page URL. Every HTML page has a Markdown twin at the same URL with `.md` appended. Data covers {{ plural(business_count, 'business', 'businesses') }} and {{ plural(review_count, 'review') }} (updated {{ updated }}).
+
+## Places
+{% for c in countries %}
+- [{{ c.label }}]({{ site }}{{ c.path }}.md): {{ plural(c.count, 'business', 'businesses') }}{% endfor %}{% for c in cities %}
+- [{{ c.label }}]({{ site }}{{ c.path }}.md): {{ plural(c.count, 'business', 'businesses') }}{% endfor %}
+
+## Most-reviewed businesses
+{% for li in top %}
+- [{{ li.business.name | oneline }}]({{ site }}{{ li.path }}.md): {{ category(li.business.category) }}{% if li.business.city %}, {{ li.business.city }}{% endif %}; {{ plural(li.business.review_count, 'review') }}, {{ pct(li.business) }}% recommend{% endfor %}
+
+## For AI agents and developers
+
+- [MCP server]({{ api }}/mcp): read-only tools search_businesses, get_business, top_businesses, how_to_submit_review (streamable HTTP, no auth)
+- [OpenAPI spec]({{ api }}/api/openapi-public.json): public read API (search, business by id or slug, top businesses)
+- [How reviews are verified and ranked]({{ site }}/about/methodology)
+
+## Optional
+
+- [All business pages in one file]({{ site }}/llms-full.txt)
+- [Sitemap]({{ site }}/sitemap.xml)
+- [About Afefehub]({{ site }}/about)

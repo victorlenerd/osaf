@@ -59,6 +59,8 @@ INDEX_BODY = {
             "location": {"type": "geo_point"},
             "review_count": {"type": "integer"},
             "recommend_rate": {"type": "float"},
+            "average_rating": {"type": "float"},
+            "rating_count": {"type": "integer"},
             "overall_sentiment": {"type": "keyword"},
             "updated_at": {"type": "date"},
         }
@@ -114,6 +116,8 @@ def business_doc(b: Business, summary: BusinessSummary | None) -> dict:
         "complaints": " ".join(summary.recurring_complaints) if summary else None,
         "review_count": b.review_count,
         "recommend_rate": round(b.recommend_rate, 3),
+        "average_rating": b.average_rating,
+        "rating_count": b.rating_count,
         "overall_sentiment": summary.overall_sentiment if summary else None,
         "updated_at": b.updated_at,
     }
@@ -274,6 +278,8 @@ def search(
             "category": src.get("category"),
             "review_count": src.get("review_count", 0),
             "recommend_rate": src.get("recommend_rate", 0.0),
+            "average_rating": src.get("average_rating"),
+            "rating_count": src.get("rating_count", 0),
             "overall_sentiment": src.get("overall_sentiment"),
             "summary_headline": src.get("summary_headline"),
             "location": {"lat": loc["lat"], "lng": loc["lon"]} if loc else None,

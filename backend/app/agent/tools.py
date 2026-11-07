@@ -50,6 +50,16 @@ SEARCH_PLACES = {
     },
 }
 
+RATING_FIELD = {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 5,
+    "description": (
+        "Stars out of 5, ONLY when the reviewer explicitly gave a score ('4 stars', '8/10' -> 4, "
+        "'5 over 5'). Omit otherwise; never infer it from sentiment."
+    ),
+}
+
 # The draft the agent carries between clarification rounds. Same shape as finalize_review minus
 # the resolved business, so the next turn starts from these instead of re-reading the transcript.
 DRAFT_FIELDS = {
@@ -69,6 +79,7 @@ DRAFT_FIELDS = {
     "good": {"type": "array", "items": {"type": "string"}},
     "improve": {"type": "array", "items": {"type": "string"}},
     "recommend": {"type": "string", "enum": ["yes", "no", "maybe"]},
+    "rating": RATING_FIELD,
     "category": {"type": "string", "enum": CATEGORIES},
     "keywords": {"type": "array", "items": {"type": "string"}},
     "overall_sentiment": {"type": "string", "enum": ["positive", "mixed", "negative"]},
@@ -179,6 +190,7 @@ FINALIZE_REVIEW = {
                     "description": "0-5 short points on what could improve",
                 },
                 "recommend": {"type": "string", "enum": ["yes", "no", "maybe"]},
+                "rating": RATING_FIELD,
                 "category": {"type": "string", "enum": CATEGORIES},
                 "keywords": {
                     "type": "array",

@@ -798,8 +798,16 @@ def test_business_left_with_only_hidden_reviews_loses_its_summary(monkeypatch):
         erase.opensearch, "delete_business", lambda bid: calls.append(f"search:{bid}")
     )
     monkeypatch.setattr(erase, "generate_summary", lambda *a: pytest.fail("no summary of hidden"))
+    monkeypatch.setattr(
+        erase.seo_site, "remove_business_page", lambda bid: calls.append(f"page:{bid}")
+    )
+    monkeypatch.setattr(
+        erase.seo_site, "publish_business_page", lambda bid: pytest.fail("no page of hidden")
+    )
     report = erase.rebuild_businesses(["biz-h1"])
-    assert calls == ["summary:biz-h1", "search:biz-h1"] and report.businesses_rebuilt == ["biz-h1"]
+    # the crawlable page goes now, not at the nightly render
+    assert calls == ["summary:biz-h1", "search:biz-h1", "page:biz-h1"]
+    assert report.businesses_rebuilt == ["biz-h1"]
 
 
 def test_offer_names_no_month(rewards_db):

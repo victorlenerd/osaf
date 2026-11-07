@@ -14,6 +14,10 @@ export interface LatLng {
 
 export interface SearchResult {
   business_id: string;
+  /** Stable slug of the crawlable page; absent from older API builds. */
+  slug?: string;
+  /** Canonical, server-rendered page (https://afefehub.com/b/<slug>). */
+  url?: string;
   name: string;
   formatted_address: string;
   city: string | null;
@@ -21,6 +25,9 @@ export interface SearchResult {
   category: Category | string;
   review_count: number;
   recommend_rate: number;
+  /** 1-5 average over the reviews that carry a star rating; null when none do. */
+  average_rating?: number | null;
+  rating_count?: number;
   overall_sentiment: Sentiment | null;
   summary_headline: string | null;
   location: LatLng | null;
@@ -58,6 +65,8 @@ export interface Extraction {
   good: string[];
   improve: string[];
   recommend: Recommend;
+  /** 1-5 stars, only when the reviewer gave one. */
+  rating?: number | null;
   category: Category | string;
   keywords: string[];
   overall_sentiment: Sentiment;

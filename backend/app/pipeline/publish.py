@@ -17,6 +17,8 @@ from app.models import Conversation, Fingerprint, Review, Submission, Submission
 from app.moderation import bans
 from app.pipeline.quota import phone_hash, slots_line, weekly_quota
 from app.rewards import flow as rewards
+from app.seo import site as seo_site
+from app.seo.slugs import business_path
 from app.store import dynamo, opensearch, s3
 from app.store import rewards_store as rstore
 from app.whatsapp import client as wa
@@ -35,8 +37,12 @@ DUPLICATE_MSG = (
 )
 
 
-def business_url(business_id: str) -> str:
-    return f"{get_settings().public_site_url}/business?id={business_id}"
+def business_url(business_id: str, slug: str | None = None) -> str:
+    """The canonical, crawlable page when the slug is known; the interactive page otherwise."""
+    site = get_settings().public_site_url.rstrip("/")
+    if slug:
+        return f"{site}{business_path(slug)}"
+    return f"{site}/business?id={business_id}"
 
 
 def _reject(sub: Submission, reason: str, message: str) -> None:
@@ -194,6 +200,10 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         opensearch.upsert_business(business, summary)
     except Exception:  # noqa: BLE001
         log.exception("opensearch upsert failed for %s", business.business_id)
+    try:
+        seo_site.publish_business_page(business.business_id)
+    except Exception:  # noqa: BLE001
+        log.exception("page render failed for %s", business.business_id)
 
     sub.review_id = review_id
     sub.business_id = business.business_id
@@ -213,7 +223,7 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
 
     body = (
         f"Published! 🎉 Your review of {business.name} is live:\n"
-        f"{business_url(business.business_id)}\n\n"
+        f"{business_url(business.business_id, business.slug)}\n\n"
         f"That's review #{business.review_count} for this business."
     )
     s = get_settings()

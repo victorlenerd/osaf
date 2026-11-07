@@ -1,14 +1,15 @@
-import Link from "next/link";
 import type { SearchResult } from "@/lib/types";
-import { percent, pluralize } from "@/lib/format";
+import { businessHref, percent, pluralize } from "@/lib/format";
 import { CategoryBadge, SentimentDot } from "./Badges";
+import Stars from "./Stars";
 
 export default function ResultCard({ result }: { result: SearchResult }) {
   const hasReviews = result.review_count > 0;
   return (
     <li>
-      <Link
-        href={`/business?id=${encodeURIComponent(result.business_id)}`}
+      {/* A plain link: /b/<slug> pages are rendered by the backend, not part of the Next app. */}
+      <a
+        href={businessHref(result)}
         className="card group block p-4 transition-transform hover:-translate-y-0.5 focus-visible:-translate-y-0.5 sm:p-5"
       >
         <div className="flex items-start justify-between gap-3">
@@ -35,8 +36,9 @@ export default function ResultCard({ result }: { result: SearchResult }) {
               {percent(result.recommend_rate)} recommend
             </span>
           )}
+          {result.average_rating != null && <Stars rating={result.average_rating} withValue />}
         </div>
-      </Link>
+      </a>
     </li>
   );
 }

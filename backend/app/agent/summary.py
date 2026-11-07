@@ -36,6 +36,7 @@ def _review_view(r: Review) -> dict:
         "review_id": r.review_id,
         "created_at": r.created_at,
         "recommend": e.recommend,
+        **({"rating": e.rating} if e.rating else {}),
         "overall_sentiment": e.overall_sentiment,
         "good": e.good,
         "improve": e.improve,

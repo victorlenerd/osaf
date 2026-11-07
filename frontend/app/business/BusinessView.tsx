@@ -25,6 +25,17 @@ type State =
   /** Known to Google but not (yet) reviewed on Afefehub: show its live Google reviews instead. */
   | { status: "google-only"; data: GooglePlaceResponse };
 
+async function canonicalExists(url: string | undefined, signal: AbortSignal): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const path = new URL(url).pathname;
+    const res = await fetch(path, { method: "HEAD", signal });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export default function BusinessView() {
   const params = useSearchParams();
   const id = params.get("id");
@@ -38,8 +49,13 @@ export default function BusinessView() {
     const ctrl = new AbortController();
     setState({ status: "loading" });
     getBusiness(id, ctrl.signal)
-      .then((data) => {
+      .then(async (data) => {
         if (ctrl.signal.aborted) return;
+        // Legacy ?id= links move to the canonical page once it has been rendered.
+        if (await canonicalExists(data.business.url, ctrl.signal)) {
+          window.location.replace(new URL(data.business.url!).pathname);
+          return;
+        }
         setState({ status: "ready", data });
         document.title = `${data.business.name} · Afefehub`;
       })
@@ -141,6 +157,12 @@ export default function BusinessView() {
             Open in Google Maps
           </a>
           <span className="muted">{pluralize(business.review_count, "review")}</span>
+          {business.average_rating != null && (
+            <span className="inline-flex items-center gap-1">
+              <Stars rating={business.average_rating} withValue />
+              <span className="muted">({pluralize(business.rating_count ?? 0, "rating")})</span>
+            </span>
+          )}
           {business.review_count > 0 && (
             <span className="muted">
               {percent(business.recommend_rate)} recommend · {business.recommend_counts.yes} yes / {business.recommend_counts.maybe} maybe / {business.recommend_counts.no} no

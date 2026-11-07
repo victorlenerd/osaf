@@ -59,5 +59,10 @@ locals {
     PUBLIC_API_URL      = local.api_url
     ENV                 = local.env
     PAYOUTS_ENABLED     = tostring(var.payouts_enabled)
+    # Crawlable pages (backend/app/seo): written to the site bucket, CloudFront invalidated.
+    SITE_BUCKET                = aws_s3_bucket.site.bucket
+    CLOUDFRONT_DISTRIBUTION_ID = var.dns_delegated ? aws_cloudfront_distribution.site[0].id : ""
+    WHATSAPP_PUBLIC_NUMBER     = var.whatsapp_public_number
+    INDEXNOW_KEY               = var.indexnow_key
   }
 }

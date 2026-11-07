@@ -30,6 +30,7 @@ from app.agent.summary import generate_summary
 from app.fingerprint import index as fpindex
 from app.models import now_iso
 from app.pii import phone_hash, phone_label
+from app.seo import site as seo_site
 from app.store import dynamo, opensearch, s3
 from app.store import rewards_store as rstore
 from app.store.s3 import Keys
@@ -189,6 +190,9 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
     if business is None:
         dynamo.delete_business(business_id)
         opensearch.delete_business(business_id)
+        # The page must go too. A failure here fails the business so the operator retry
+        # (rebuild_businesses) runs it again; the nightly render also prunes it.
+        seo_site.remove_business_page(business_id)
         try:
             safe = business_id.replace("/", "_")
             report.objects += s3.delete_prefix(f"businesses/{safe}/summary_history/")
@@ -202,12 +206,17 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
         # and drop its summary, which paraphrases those reviews and the page would still show.
         dynamo.delete_summary(business_id)
         opensearch.delete_business(business_id)
+        # Its public page (and the hubs, sitemaps and llms.txt listing it) shows those reviews
+        # too: take it down now rather than at the nightly render.
+        seo_site.remove_business_page(business_id)
         report.businesses_rebuilt.append(business_id)
         return
     # No `previous`: the old summary may paraphrase the review that was just removed.
     summary = generate_summary(business, reviews, None)
     dynamo.put_summary(business_id, summary)
     opensearch.upsert_business(business, summary)
+    # Re-render now: the cached page still shows the erased review until it is replaced.
+    seo_site.publish_business_page(business_id)
     report.businesses_rebuilt.append(business_id)
 
 

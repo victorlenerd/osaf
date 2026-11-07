@@ -100,6 +100,9 @@ class ReviewExtraction(BaseModel):
     good: list[str] = Field(default_factory=list, max_length=6)
     improve: list[str] = Field(default_factory=list, max_length=6)
     recommend: Recommend = "maybe"
+    # 1-5 stars, only when the reviewer gave one explicitly (or answered the agent's question).
+    # Never inferred from sentiment; None for reviews published before ratings existed.
+    rating: int | None = Field(default=None, ge=1, le=5)
     category: Category = "other"
     keywords: list[str] = Field(default_factory=list, max_length=10)
     overall_sentiment: Sentiment = "mixed"
@@ -370,6 +373,9 @@ class Business(BaseModel):
     )
     keywords: dict[str, int] = Field(default_factory=dict)
     names_as_said: list[str] = Field(default_factory=list)
+    # Star ratings: sum and count of the reviews that carry one (most early reviews do not).
+    rating_sum: int = 0
+    rating_count: int = 0
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
 
@@ -377,6 +383,16 @@ class Business(BaseModel):
     def recommend_rate(self) -> float:
         total = sum(self.recommend_counts.values())
         return (self.recommend_counts.get("yes", 0) / total) if total else 0.0
+
+    @property
+    def average_rating(self) -> float | None:
+        return round(self.rating_sum / self.rating_count, 2) if self.rating_count else None
+
+    @property
+    def slug(self) -> str:
+        from app.seo.slugs import business_slug
+
+        return business_slug(self.business_id, self.name, self.city)
 
 
 class Review(BaseModel):
