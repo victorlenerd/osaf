@@ -2,6 +2,8 @@ import os
 
 os.environ.setdefault("MODEL_API_KEY", "test")
 os.environ.setdefault("GOOGLE_PLACES_API_KEY", "test")
+# The payout programme's tests run with it switched on; off-mode tests turn it off explicitly.
+os.environ.setdefault("PAYOUTS_ENABLED", "true")
 # No test may reach real AWS: unknown credentials and an endpoint nothing listens on, so a
 # store call that a test forgot to fake fails instead of touching a live table or bucket.
 for _var in ("AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AWS_SESSION_TOKEN"):

@@ -58,6 +58,8 @@ All P0 code changes landed on 2026-10-31. Rollout order: `terraform apply` (new 
 
 ### Payouts (Nigeria) and author verification
 
+The programme ships switched off: `payouts_enabled = false` in Terraform (backend `PAYOUTS_ENABLED`) and `NEXT_PUBLIC_PAYOUTS_ENABLED=false` in `frontend/.env.production`. While off, reviewers keep today's scheme (10 points per published review, the current Terms and rewards card), and duplicate detection, bans, crediting reels to their poster and media retention already run. Launch day, once everything below is done: set both to true, `terraform apply`, rebuild and sync the site, then delete `frontend/app/terms/current-terms.tsx` and `frontend/components/CurrentRewardsCard.tsx`.
+
 - [ ] Run `python scripts/create_index.py` (or deploy: the API creates it at startup) so the `fingerprints` index exists, then `python scripts/backfill_payouts.py` (dry run, then `--apply`) with a developer profile: it fingerprints existing reviews whose media has not expired, copies their media to `reviews/`, and lists legacy points balances at 100+ that must be honoured under the old Terms.
 - [ ] Tune the duplicate thresholds with `scripts/fingerprint_report.py` once there are a few dozen real reviews; the defaults were checked on synthetic media only.
 - [ ] Meta app: add the Instagram webhook (`https://api.afefehub.com/webhooks/instagram`, verify token = `IG_VERIFY_TOKEN` via `scripts/set_secrets.sh`), subscribe to `messages`, and request **Advanced Access for `instagram_business_manage_messages`** (app review). Until it is granted only app testers can verify reels. `IG_ACCESS_TOKEN` must carry that permission.

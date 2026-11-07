@@ -63,6 +63,7 @@ class ErasurePreview:
     reviews: int
     submissions: int
     entries: int = 0  # payout entries not yet paid
+    points: int = 0  # legacy flat-reward balance (before the payout launch)
 
 
 def preview(phone: str) -> ErasurePreview:
@@ -72,6 +73,7 @@ def preview(phone: str) -> ErasurePreview:
         reviews=len(dynamo.list_all_reviews_by_reviewer(h)),
         submissions=len(dynamo.list_all_submissions_for_phone(phone)),
         entries=sum(1 for e in rstore.list_entries(h) if e.status != "paid"),
+        points=dynamo.get_points(phone),
     )
 
 

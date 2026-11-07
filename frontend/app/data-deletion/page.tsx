@@ -134,7 +134,7 @@ export default function DataDeletionPage() {
             the date and the reviews it covered) for accounting, with your phone number removed. Your bank details are not kept.
           </li>
           <li>
-            <strong>Bans.</strong> If your number was banned from the payout programme for spam or abuse, we keep a one-way hash
+            <strong>Bans.</strong> If your number was banned for spam or abuse, we keep a one-way hash
             of it so the ban still applies. It is used only for fraud prevention.
           </li>
           <li>

@@ -58,5 +58,6 @@ locals {
     PUBLIC_SITE_URL     = local.site_url
     PUBLIC_API_URL      = local.api_url
     ENV                 = local.env
+    PAYOUTS_ENABLED     = tostring(var.payouts_enabled)
   }
 }

@@ -211,18 +211,27 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         conv.profile_country = ext.business.country
     dynamo.put_conversation(conv)
 
-    # The offer is recorded only once the PUBLISHED marker is durable.
-    offer = rewards.offer_after_publish(review, sub.phone)
     body = (
         f"Published! 🎉 Your review of {business.name} is live:\n"
         f"{business_url(business.business_id)}\n\n"
         f"That's review #{business.review_count} for this business."
     )
-    if offer:
-        body += f"\n\n{offer}"
-    body += (
-        f"\n\n{slots_line(q)} Send another reel or voice note anytime; text *points* to see "
-        "your payout entries."
-    )
+    s = get_settings()
+    if s.payouts_enabled:
+        # The offer is recorded only once the PUBLISHED marker is durable.
+        offer = rewards.offer_after_publish(review, sub.phone)
+        if offer:
+            body += f"\n\n{offer}"
+        body += (
+            f"\n\n{slots_line(q)} Send another reel or voice note anytime; text *points* to "
+            "see your payout entries."
+        )
+    else:
+        # Before the payout launch: the current scheme, a flat reward on every review.
+        total = dynamo.add_points(sub.phone, s.points_per_review)
+        body += (
+            f" ⭐ +{s.points_per_review} points, you now have {total}.\n\n{slots_line(q)} "
+            "Send another reel or voice note anytime; text *points* to check your balance."
+        )
     wa.send_text(sub.phone, body)
     return review
