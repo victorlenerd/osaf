@@ -206,6 +206,9 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
         # and drop its summary, which paraphrases those reviews and the page would still show.
         dynamo.delete_summary(business_id)
         opensearch.delete_business(business_id)
+        # Its public page (and the hubs, sitemaps and llms.txt listing it) shows those reviews
+        # too: take it down now rather than at the nightly render.
+        seo_site.remove_business_page(business_id)
         report.businesses_rebuilt.append(business_id)
         return
     # No `previous`: the old summary may paraphrase the review that was just removed.

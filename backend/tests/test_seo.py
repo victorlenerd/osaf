@@ -407,3 +407,18 @@ def test_shared_reel_is_credited_to_its_instagram_poster():
     assert "<strong>@tolu.eats</strong>" in out.html and "🇳🇬" not in out.html
     assert node(jsonld(out.html), "Restaurant")["review"][0]["author"]["name"] == "@tolu.eats"
     assert "### @tolu.eats," in out.md
+
+
+def test_business_with_only_hidden_reviews_is_pruned(world):
+    """After a ban hides a business's last published review its counters drop to zero; the
+    page, its hubs and its sitemap entry must go."""
+    store, w = world
+    site.render_all(writer=w)
+    slug = store.businesses["a"].slug
+    assert (w.root / f"b/{slug}.html").exists()
+    store.businesses["a"].review_count = 0
+    for r in store.reviews["a"]:
+        r.status = "hidden"
+    site.remove_business_page("a", writer=w)
+    assert not (w.root / f"b/{slug}.html").exists()
+    assert slug not in (w.root / "sitemaps/businesses.xml").read_text()
