@@ -188,6 +188,26 @@ def world(monkeypatch):
     monkeypatch.setattr(
         runner.publish, "publish_submission", lambda sub, conv: events.append("publish")
     )
+    # Discovery never reaches the model API here: the intent check reads every message as an
+    # answer, and a discovery turn is recorded instead of run, unless a test says otherwise.
+    monkeypatch.setattr(runner.discover, "classify_intent", lambda text, q: "answer")
+
+    def fake_turn(conv, text):
+        events.append(f"discover:{text}")
+        return runner.discover.DiscoveryOutcome(
+            message=f"vendors for {text}",
+            session=runner.discover.DiscoverySession(last_query=text),
+            searched=True,
+        )
+
+    monkeypatch.setattr(runner.discover, "run_discovery_turn", fake_turn)
+    store.discovery_turns = 0
+
+    def incr(phone):
+        store.discovery_turns += 1
+        return store.discovery_turns
+
+    store.incr_discovery_count = incr
     return store, sent, events
 
 
@@ -195,7 +215,7 @@ def _text(body: str) -> dict:
     return {"type": "text", "text": {"body": body}}
 
 
-def test_junk_gets_help(world):
+def test_greeting_gets_help(world):
     store, sent, events = world
     runner.process_inbound("2348012345678", _text("hello"), "Ada")
     assert "Afefehub" in sent[0][1] and not events
@@ -1091,3 +1111,177 @@ def test_help_mentions_deletion(world):
     store, sent, events = world
     runner.process_inbound(PHONE, _text("hi"), "Ada")
     assert "delete my data" in sent[0][1]
+
+
+# ------------------------------------------------------------------ vendor discovery routing
+@pytest.fixture
+def disco(world, monkeypatch):
+    """`world` with the model key set, so discovery runs the (stubbed) agent turn."""
+    monkeypatch.setattr(get_settings(), "model_api_key", "k")
+    return world
+
+
+def _waiting(store: FakeStore, state: SubmissionState, question: str = "Which branch?"):
+    sub = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_url="u",
+        reel_shortcode="sc",
+        state=state,
+        pending_question=question,
+    )
+    store.subs["s1"] = sub
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    return sub
+
+
+def test_free_text_is_a_vendor_question(disco):
+    store, sent, events = disco
+    runner.process_inbound(PHONE, _text("where can I get good jollof in Ikeja"), "Ada")
+    assert events == ["discover:where can I get good jollof in Ikeja"]
+    assert sent[-1][1] == "vendors for where can I get good jollof in Ikeja"
+    assert store.convs[PHONE].discovery.last_query == "where can I get good jollof in Ikeja"
+
+
+def test_greetings_and_help_still_get_the_intro(disco):
+    store, sent, events = disco
+    for phrase in ("hi", "Hello!", "help", "menu", "?", "good morning", "how does this work?"):
+        runner.process_inbound(PHONE, _text(phrase), "Ada")
+        assert "Looking for somewhere good?" in sent[-1][1], phrase
+    assert not events
+
+
+def test_confirm_word_publishes_without_an_intent_check(disco, monkeypatch):
+    store, sent, events = disco
+    _waiting(store, SubmissionState.CONFIRMING, "Here's what I got")
+    monkeypatch.setattr(
+        runner.discover, "classify_intent", lambda *a: pytest.fail("intent check ran")
+    )
+    runner.process_inbound(PHONE, _text("ok"))
+    assert events == ["publish"]
+
+
+def test_number_reply_is_an_answer_without_an_intent_check(disco, monkeypatch):
+    store, sent, events = disco
+    _waiting(store, SubmissionState.AWAITING_CLARIFICATION, "Which one? 1. A 2. B")
+    monkeypatch.setattr(
+        runner.discover, "classify_intent", lambda *a: pytest.fail("intent check ran")
+    )
+    runner.process_inbound(PHONE, _text("2"))
+    assert events == ["extract:2"]
+
+
+def test_vendor_question_mid_review_leaves_the_review_waiting(disco, monkeypatch):
+    store, sent, events = disco
+    sub = _waiting(store, SubmissionState.AWAITING_CLARIFICATION, "Which branch?")
+    asked: list = []
+    monkeypatch.setattr(
+        runner.discover,
+        "classify_intent",
+        lambda text, q: asked.append((text, q)) or "discover",
+    )
+    runner.process_inbound(PHONE, _text("any good barber in Yaba?"))
+    assert asked == [("any good barber in Yaba?", "Which branch?")]
+    assert events == ["discover:any good barber in Yaba?"]
+    assert "still waiting for your reply" in sent[-1][1]
+    assert sub.state == SubmissionState.AWAITING_CLARIFICATION
+    assert sub.pending_question == "Which branch?" and sub.qa_log == []
+
+
+def test_answer_mid_review_is_still_an_answer(disco):
+    store, sent, events = disco
+    sub = _waiting(store, SubmissionState.AWAITING_CLARIFICATION, "Which branch?")
+    runner.process_inbound(PHONE, _text("the one on Allen Avenue in Ikeja"))
+    assert events == ["extract:the one on Allen Avenue in Ikeja"]
+    assert sub.qa_log[-1].a == "the one on Allen Avenue in Ikeja"
+
+
+def test_vendor_question_while_review_is_processing(disco):
+    store, sent, events = disco
+    _waiting(store, SubmissionState.TRANSCRIBING, None)
+    runner.process_inbound(PHONE, _text("best shawarma in Wuse 2"))
+    assert events == ["discover:best shawarma in Wuse 2"]
+    assert "still working on your review" in sent[-1][1]
+
+
+def test_location_pin_reruns_the_last_search_near_it(disco):
+    store, sent, events = disco
+    runner.process_inbound(PHONE, _text("suya spots"))
+    loc = {"type": "location", "location": {"latitude": 6.4474, "longitude": 3.4723}}
+    runner.process_inbound(PHONE, loc)
+    conv = store.convs[PHONE]
+    assert (conv.last_location.lat, conv.last_location.lng) == (6.4474, 3.4723)
+    assert events[-1] == "discover:I just shared my location. Same request, near me: suya spots"
+
+
+def test_location_pin_without_a_search_asks_what_for(disco):
+    store, sent, events = disco
+    runner.process_inbound(
+        PHONE, {"type": "location", "location": {"latitude": 9.07, "longitude": 7.4}}
+    )
+    assert "What are you looking for nearby?" in sent[-1][1] and not events
+    runner.process_inbound(PHONE, {"type": "location", "location": {"latitude": "x"}})
+    assert "couldn't read that location" in sent[-1][1]
+
+
+def test_discovery_daily_cap(disco, monkeypatch):
+    store, sent, events = disco
+    monkeypatch.setattr(get_settings(), "discovery_daily_limit", 2)
+    for _ in range(3):
+        runner.process_inbound(PHONE, _text("pharmacy in Lekki"))
+    assert len(events) == 2 and "asked me a lot today" in sent[-1][1]
+
+
+def test_discovery_without_model_key_falls_back_to_plain_search(world, monkeypatch):
+    store, sent, events = world
+    monkeypatch.setattr(get_settings(), "model_api_key", "")
+    hits = [
+        {
+            "business_id": "ChIJ1",
+            "name": "Suya Palace",
+            "formatted_address": "Admiralty Way, Lekki",
+            "review_count": 2,
+            "recommend_rate": 1.0,
+            "summary_headline": "Spicy suya, quick service",
+        }
+    ]
+    monkeypatch.setattr(runner.opensearch, "search", lambda q, **kw: hits)
+    runner.process_inbound(PHONE, _text("suya in Lekki"))
+    body = sent[-1][1]
+    assert "1. *Suya Palace*" in body and "100% recommend (2 reviews)" in body
+    assert "business?id=ChIJ1" in body and not events
+
+
+def test_incr_discovery_count_and_erasure_of_counters(monkeypatch):
+    from decimal import Decimal
+
+    from app.store import dynamo
+
+    updates: list[dict] = []
+    deleted: list[tuple] = []
+
+    class T:
+        def update_item(self, **kw):
+            updates.append(kw)
+            return {"Attributes": {"turns": Decimal(3)}}
+
+        def query(self, **kw):
+            assert kw["ExpressionAttributeValues"][":disco"] == "DISCO#"
+            return {"Items": [{"SK": "DISCO#2026-11-05"}, {"SK": "DISCO#2026-11-06"}]}
+
+        def delete_item(self, Key):
+            deleted.append((Key["PK"], Key["SK"]))
+
+    monkeypatch.setattr(dynamo, "_table", lambda: T())
+    assert dynamo.incr_discovery_count("p") == 3
+    kw = updates[0]
+    assert kw["Key"]["SK"].startswith("DISCO#") and "expires_at" in kw["UpdateExpression"]
+    for key in kw["ExpressionAttributeValues"]:
+        assert key in kw["UpdateExpression"]
+    dynamo.delete_conversation("p")
+    assert deleted == [
+        ("CONV#p", "META"),
+        ("CONV#p", "POINTS"),
+        ("CONV#p", "DISCO#2026-11-05"),
+        ("CONV#p", "DISCO#2026-11-06"),
+    ]

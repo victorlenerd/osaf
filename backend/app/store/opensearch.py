@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from functools import lru_cache
 
 import boto3
@@ -136,20 +137,56 @@ def delete_business(business_id: str) -> None:
     )
 
 
-def search(
+RANK_SCRIPT = {
+    "script_score": {
+        "script": {
+            "source": (
+                "_score * (1 + Math.log1p(doc['review_count'].value) "
+                "* (0.5 + doc['recommend_rate'].value))"
+            )
+        }
+    }
+}
+
+
+def build_search_body(
     q: str,
     *,
     country: str | None = None,
     category: str | None = None,
+    city: str | None = None,
+    near: tuple[float, float, float] | None = None,
+    exclude_ids: list[str] | None = None,
     limit: int = 20,
-) -> list[dict]:
-    filters = []
+) -> dict:
+    """The query for `search`. `city` is a city or an area ("Lekki", "Wuse 2"): it matches the
+    city field or the address. `near` is (lat, lng, radius_km): only businesses inside the
+    radius, closer ones ranked higher."""
+    filters: list[dict] = []
     if country:
         filters.append({"term": {"country": country.upper()}})
     if category:
         filters.append({"term": {"category": category}})
+    if city and city.strip():
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"city": city.strip()}},
+                        {"match": {"city.text": {"query": city, "operator": "and"}}},
+                        {"match": {"formatted_address": {"query": city, "operator": "and"}}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+    if near:
+        lat, lng, radius_km = near
+        filters.append(
+            {"geo_distance": {"distance": f"{radius_km}km", "location": {"lat": lat, "lon": lng}}}
+        )
     if q.strip():
-        must = {
+        must: dict = {
             "multi_match": {
                 "query": q,
                 "type": "best_fields",
@@ -167,42 +204,82 @@ def search(
         }
     else:
         must = {"match_all": {}}
-    body = {
+    query: dict = {"bool": {"must": must, "filter": filters}}
+    if exclude_ids:
+        query["bool"]["must_not"] = [{"ids": {"values": list(exclude_ids)}}]
+    functions: list[dict] = [RANK_SCRIPT]
+    if near:
+        lat, lng, radius_km = near
+        functions.append(
+            {
+                "gauss": {
+                    "location": {
+                        "origin": {"lat": lat, "lon": lng},
+                        "scale": f"{max(radius_km / 2, 0.5)}km",
+                    }
+                }
+            }
+        )
+    return {
         "size": limit,
         "query": {
             "function_score": {
-                "query": {"bool": {"must": must, "filter": filters}},
-                "script_score": {
-                    "script": {
-                        "source": (
-                            "_score * (1 + Math.log1p(doc['review_count'].value) "
-                            "* (0.5 + doc['recommend_rate'].value))"
-                        )
-                    }
-                },
+                "query": query,
+                "functions": functions,
+                "score_mode": "multiply",
                 "boost_mode": "replace",
             }
         },
     }
+
+
+def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def search(
+    q: str,
+    *,
+    country: str | None = None,
+    category: str | None = None,
+    city: str | None = None,
+    near: tuple[float, float, float] | None = None,
+    exclude_ids: list[str] | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    body = build_search_body(
+        q,
+        country=country,
+        category=category,
+        city=city,
+        near=near,
+        exclude_ids=exclude_ids,
+        limit=limit,
+    )
     r = client().search(index=get_settings().opensearch_index, body=body)
     out = []
     for hit in r["hits"]["hits"]:
         src = hit["_source"]
         loc = src.get("location")
-        out.append(
-            {
-                "business_id": src["business_id"],
-                "name": src["name"],
-                "formatted_address": src.get("formatted_address", ""),
-                "city": src.get("city"),
-                "country": src.get("country"),
-                "category": src.get("category"),
-                "review_count": src.get("review_count", 0),
-                "recommend_rate": src.get("recommend_rate", 0.0),
-                "overall_sentiment": src.get("overall_sentiment"),
-                "summary_headline": src.get("summary_headline"),
-                "location": {"lat": loc["lat"], "lng": loc["lon"]} if loc else None,
-                "score": hit.get("_score"),
-            }
-        )
+        row = {
+            "business_id": src["business_id"],
+            "name": src["name"],
+            "formatted_address": src.get("formatted_address", ""),
+            "city": src.get("city"),
+            "country": src.get("country"),
+            "category": src.get("category"),
+            "review_count": src.get("review_count", 0),
+            "recommend_rate": src.get("recommend_rate", 0.0),
+            "overall_sentiment": src.get("overall_sentiment"),
+            "summary_headline": src.get("summary_headline"),
+            "location": {"lat": loc["lat"], "lng": loc["lon"]} if loc else None,
+            "score": hit.get("_score"),
+        }
+        if near and loc:
+            row["distance_km"] = round(_distance_km(near[0], near[1], loc["lat"], loc["lon"]), 1)
+        out.append(row)
     return out

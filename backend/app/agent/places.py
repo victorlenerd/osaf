@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 
 import httpx
 import phonenumbers
@@ -44,6 +46,33 @@ DETAILS_FIELD_MASK = ",".join(
     ]
 )
 PLACES_BASE = "https://places.googleapis.com/v1"
+
+
+class TokenBucket:
+    """Per-process burst guard on paid Google calls.
+
+    A daily quota set in Google Cloud console is the real cap."""
+
+    def __init__(self, rate_per_minute: int):
+        self.capacity = float(rate_per_minute)
+        self.tokens = float(rate_per_minute)
+        self.refill_per_s = rate_per_minute / 60.0
+        self.updated = time.monotonic()
+        self.lock = threading.Lock()
+
+    def take(self) -> bool:
+        with self.lock:
+            now = time.monotonic()
+            self.tokens = min(self.capacity, self.tokens + (now - self.updated) * self.refill_per_s)
+            self.updated = now
+            if self.tokens < 1:
+                return False
+            self.tokens -= 1
+            return True
+
+
+# Shared by the public API (/api/places/*) and the WhatsApp discovery agent.
+google_bucket = TokenBucket(60)
 
 
 def country_from_phone(phone: str) -> str | None:

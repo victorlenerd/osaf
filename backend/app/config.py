@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     # Reels longer or larger than this are refused before download (disk and model cost cap).
     max_reel_seconds: int = 900
     max_reel_bytes: int = 500 * 1024 * 1024
+    # Vendor discovery over WhatsApp: how long a search chat (and a shared location pin) is
+    # remembered, how many agent turns one number gets per day, and whether the agent may
+    # suggest unreviewed Google Places when Afefehub has no match.
+    discovery_session_seconds: int = 1800
+    discovery_daily_limit: int = 40
+    discovery_google_fallback: bool = True
     # Secret key for the reviewer phone hash (HMAC). Required in prod; see app/pii.py.
     phone_hash_salt: str = ""
     work_dir: str = "/tmp/afefehub"
