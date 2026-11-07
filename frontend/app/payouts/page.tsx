@@ -88,8 +88,10 @@ const COMMANDS: { word: string; does: string }[] = [
   { word: "ENTER", does: "Enter the reviews we just published for you into this month's payout." },
   { word: "VERIFY", does: "Send a fresh Instagram verification code for your entered reels." },
   { word: "points", does: "See this month's entries, their points and status, and what you've been paid so far." },
-  { word: "bank details", does: "Change the bank account we pay you to." },
-  { word: "AMAZON", does: "Be paid with an Amazon gift card instead of a bank transfer." },
+  {
+    word: "bank details",
+    does: "Change how we pay you: send your new bank details, or reply AMAZON for an Amazon gift card instead.",
+  },
   { word: "delete my data", does: "Erase everything we hold about you. Points not yet paid are forfeited." },
 ];
 
@@ -161,8 +163,8 @@ export default function PayoutsPage() {
         Get paid for honest reviews.
       </h1>
       <p className="mt-5 text-lg leading-relaxed muted">
-        {comingSoon ? "Soon you'll be able to review" : "Review"} businesses in Nigeria on Afefehub and earn points for every review you
-        enter, glowing or grumpy. Each point is worth up to {naira(NGN_PER_POINT)}, paid once a month by bank transfer.
+        Review businesses in Nigeria on Afefehub and {comingSoon ? "soon you'll " : ""}earn points for every review you enter, glowing or
+        grumpy. Each point is worth up to {naira(NGN_PER_POINT)}, paid once a month by bank transfer.
       </p>
       {comingSoon && (
         <div className="card mt-6 p-5" role="note">
