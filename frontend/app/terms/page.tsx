@@ -76,19 +76,29 @@ const sections: LegalSection[] = [
     title: "Submitting a review",
     body: (
       <>
-        <p>When you send us a reel link you make the following commitments, each of which is a condition of publication:</p>
+        <p>
+          You may send us a public Instagram reel you posted yourself, or a public reel someone else posted that reviews a business. When
+          you send us a reel link you make the following commitments, each of which is a condition of publication:
+        </p>
         <ul>
           <li>
-            <strong>It is your reel.</strong> You created the video, you appear in it or have the clear consent of everyone who does, and you
-            posted it from an Instagram account you control.
+            <strong>If it is your reel,</strong> you created the video, you appear in it or have the clear consent of everyone who does, and
+            you posted it from an Instagram account you control.
           </li>
           <li>
-            <strong>It is a genuine, first-hand experience.</strong> You personally visited or dealt with the business you are reviewing, on or
-            around the date you describe.
+            <strong>If it is someone else&rsquo;s reel,</strong> it is public, it was posted by the person who made it, and you do not claim
+            to have made it or to appear in it. You may not send a copy of someone else&rsquo;s video that you downloaded and posted again,
+            and you may not send a reel that is already on {B}. Reels you did not post earn no points (see below) and stay credited to
+            their creator through Instagram&rsquo;s embed. Their creator can ask us to remove the review at any time (section 10).
           </li>
           <li>
-            <strong>It is honest.</strong> You believe what you say to be true. You will not fabricate, exaggerate for effect, or review a
-            business you have not used.
+            <strong>It is a genuine, first-hand experience.</strong> The person speaking in the reel visited or dealt with the business they
+            review, on or around the date they describe. For your own reel, that person is you; for someone else&rsquo;s, you have no reason
+            to believe otherwise.
+          </li>
+          <li>
+            <strong>It is honest.</strong> You believe what is said to be true. You will not fabricate, exaggerate for effect, review a
+            business you have not used, or send someone else&rsquo;s reel you believe to be fake or paid for without disclosure.
           </li>
           <li>
             <strong>You disclose material connections.</strong> If you own, work for, are related to, compete with, or were paid, gifted or
@@ -109,20 +119,74 @@ const sections: LegalSection[] = [
           </li>
         </ul>
         <p>
-          Submission is free. We do not pay for reviews and no business may pay you through us. To keep reviews genuine, each person
-          may publish at most three reviews in any rolling seven-day period, and we may limit the number of reviews one person may
-          submit for the same business. We may ask you clarifying questions over WhatsApp (for example, which of two similarly named
-          businesses you meant) before publishing.
+          Submission is free, and no business may pay you through us. To keep reviews genuine, each person may publish at most three
+          reviews in any rolling seven-day period, and we may limit the number of reviews one person may submit for the same business.
+          We may ask you clarifying questions over WhatsApp (for example, which of two similarly named businesses you meant) before
+          publishing.
+        </p>
+        {/* TODO: effective date. The payout programme below is a material change: set LEGAL.termsEffective at least
+            14 days after this text is published (section "Changes"), and before the first payout window opens. */}
+        <h3 id="rewards" className="scroll-mt-20">Points and monthly payouts (Nigeria only)</h3>
+        <p>
+          {B} runs an optional points programme for reviews of businesses in Nigeria. Points are paid out monthly in naira. Taking part
+          is never a condition of publishing a review.
         </p>
         <p>
-          <strong>Points and the gift card.</strong> Each published review earns 10 Afefehub points as a thank-you. Points are awarded
-          in the same amount for every published review whether it is positive, mixed or negative, so they never reward a particular
-          opinion. When your balance reaches 100 points we will send you a US$10 Amazon gift card to the WhatsApp number you review
-          from, and 100 points are deducted from your balance. The gift card is a thank-you for taking part, not payment for any
-          review or for any opinion in it. Points have no cash value, cannot be exchanged for anything other than the gift card,
-          cannot be transferred or sold, and we may withhold them, or the gift card, where a review breaks these Terms. We may change
-          or withdraw the points programme at any time; points already earned keep counting towards a gift card for 30 days after we
-          announce a change. Amazon is not a sponsor of this programme.
+          <strong>Points never depend on your opinion.</strong> A review earns the same points whether it is positive, mixed or negative.
+          The points depend only on the kind of review, listed below.
+        </p>
+        <ul>
+          <li><strong>5 points</strong> for a WhatsApp voice note;</li>
+          <li>
+            <strong>10 points</strong> for an Instagram reel posted by you, once you have verified that you are its author. After you
+            enter the reel, we send you a code on WhatsApp. You send that code as a direct message to @afefehub on Instagram, from the
+            account that posted the reel, and the username of the sending account must match the reel&rsquo;s. Once an Instagram account is
+            verified to your WhatsApp number, your later reels from that account count as author reels automatically. One Instagram account
+            can be linked to only one WhatsApp number. Verification shows only that the code was sent from that account; it is not an
+            identity check.
+          </li>
+          <li>
+            <strong>No points</strong> for an Instagram reel posted by someone else, or for a reel whose author you have not verified by the
+            time we review that month&rsquo;s entries. We may still publish such a reel as a review.
+          </li>
+        </ul>
+        <p>
+          <strong>Entering a review.</strong> Points count only for reviews you enter. After a review is published and passes the
+          eligibility checks, we ask you over WhatsApp whether to enter it for the next payout, and you enter it by replying{" "}
+          <strong>ENTER</strong>. A review is eligible only if:
+        </p>
+        <ul>
+          <li>the business is in Nigeria;</li>
+          <li>it is not a duplicate or near-duplicate of a review already on {B}. To check this we compare fingerprints of the audio, the video and the transcript with those of existing reviews;</li>
+          <li>for a reel, it passed our check that a person is speaking on camera;</li>
+          <li>it is within the limit of three reviews in any rolling seven-day period;</li>
+          <li>you have not been banned from the programme.</li>
+        </ul>
+        <p>
+          <strong>Monthly payouts.</strong> Each point is worth up to NGN 1,000. Every month we set aside a pool for each category group:
+        </p>
+        <ul>
+          <li>Shortlets: NGN 1,000,000;</li>
+          <li>Restaurants (restaurants, street food and cafés): NGN 1,000,000;</li>
+          <li>Hotels: NGN 1,000,000;</li>
+          <li>All other categories: NGN 500,000.</li>
+        </ul>
+        <p>
+          If the approved points in a category group are worth more than its pool, everyone in that group is paid pro rata, so each point
+          is worth less than NGN 1,000 that month. A person at {B} reviews every entry before payment. We may void an entry that is a
+          duplicate, is not authentic, breaks these Terms or is otherwise abusive, and a voided entry earns nothing. We pay by bank transfer
+          to a Nigerian bank account: you give us the bank name, the 10-digit account number and the account name over WhatsApp. On request
+          we can send an Amazon gift card of equivalent value instead. Amazon is not a sponsor of this programme.
+        </p>
+        <p>
+          <strong>Spam and abuse.</strong> If you spam us, submit duplicate or inauthentic reviews, or try to game the programme, we may
+          ban your WhatsApp number (and any Instagram account linked to it) from the programme. A banned reviewer forfeits all points not
+          yet paid.
+        </p>
+        <p>
+          <strong>Other terms.</strong> Points are a thank-you for taking part, not payment for any review or for any opinion in it. Points
+          have no cash value outside this programme and cannot be transferred or sold. We may change, suspend or end the programme at any
+          time.
         </p>
       </>
     ),
@@ -197,7 +261,9 @@ const sections: LegalSection[] = [
       <>
         <p>
           You keep all rights you have in your reel and anything you say in it. The reel itself remains hosted by Instagram and is displayed on
-          {" "}{B} through Instagram&rsquo;s official embed, subject to Instagram&rsquo;s terms.
+          {" "}{B} through Instagram&rsquo;s official embed, subject to Instagram&rsquo;s terms. When you send us a reel someone else posted,
+          its rights stay with its creator: you grant the licence below only to the extent you are able to, and the creator may ask us to
+          remove the review and our stored copy (section 10).
         </p>
         <p>
           So that we can operate the Service, you grant {B} a worldwide, non-exclusive, royalty-free, sublicensable (to our service providers
@@ -253,6 +319,12 @@ const sections: LegalSection[] = [
           only what we must retain under section 12 of the Privacy Policy. Deleting or privatising the reel on Instagram does not by itself
           notify us; please message us too. To erase everything we hold about you, including every review, text <em>delete my data</em> to
           the {B} number and confirm; the steps are on our <Link href="/data-deletion">Delete your data</Link> page.
+        </p>
+        <p>
+          <strong>By the reel&rsquo;s creator.</strong> If someone else sent us a reel you posted, you can ask us to remove the review by
+          emailing <a href={`mailto:${LEGAL.legalEmail}`}>{LEGAL.legalEmail}</a> with the business page link. We may ask you to confirm you
+          control the Instagram account that posted the reel, for example with a direct message from it to @afefehub. We will remove the
+          review and delete our stored copy within 14 days of that confirmation, and its payout entry will be voided if it has not been paid.
         </p>
         <p>
           <strong>By us.</strong> We may remove, hide, edit the metadata of, or refuse to publish any content at any time, with or without
@@ -480,8 +552,10 @@ export default function TermsPage() {
         </p>
       }
       summary={[
-        `You must be ${LEGAL.minimumAge} or older to submit a review, and it must be your own public Instagram reel about a business you actually visited.`,
+        `You must be ${LEGAL.minimumAge} or older to submit a review. Send your own public Instagram reel, or someone else's public reel, about a real visit to a business; never a re-upload of someone else's video.`,
         "Be honest, and say so in the video if you have any connection to the business or were given anything for the review.",
+        "Optional monthly payouts for reviews of businesses in Nigeria: 5 pts per voice note, 10 per reel you posted and verified, nothing for reels someone else posted. You opt in per review by replying ENTER. 1 pt = up to NGN 1,000, paid pro rata from monthly category pools after a person checks each entry.",
+        "Points never depend on whether your review is positive or negative. Duplicates, spam and abuse earn nothing and can get you banned.",
         "Our checks confirm a real person is speaking on camera; they do not verify identity or facts, and AI transcripts and summaries can be wrong.",
         "You keep your rights; you give us a licence to process, store a copy of, and display your reel and the review we extract from it.",
         "You can withdraw a review at any time via WhatsApp or email. We never charge businesses to remove or improve reviews.",

@@ -56,6 +56,15 @@ All P0 code changes landed on 2026-10-31. Rollout order: `terraform apply` (new 
 - [ ] **Token rotation.** A long-lived user token expires after 60 days and `--preflight` then fails with Graph error 190; a Business Manager system-user token does not expire and is the right long-term credential. Put a reminder on the calendar until that switch is made.
 - [ ] The first `--publish` goes out for real (the API cannot delete a post; remove a wrong one in the Instagram app). Run it at a quiet time, or point the IG settings at a throwaway professional account connected to the same app for the first run.
 
+### Payouts (Nigeria) and author verification
+
+- [ ] Run `python scripts/create_index.py` (or deploy: the API creates it at startup) so the `fingerprints` index exists, then `python scripts/backfill_payouts.py` (dry run, then `--apply`) with a developer profile: it fingerprints existing reviews whose media has not expired, copies their media to `reviews/`, and lists legacy points balances at 100+ that must be honoured under the old Terms.
+- [ ] Tune the duplicate thresholds with `scripts/fingerprint_report.py` once there are a few dozen real reviews; the defaults were checked on synthetic media only.
+- [ ] Meta app: add the Instagram webhook (`https://api.afefehub.com/webhooks/instagram`, verify token = `IG_VERIFY_TOKEN` via `scripts/set_secrets.sh`), subscribe to `messages`, and request **Advanced Access for `instagram_business_manage_messages`** (app review). Until it is granted only app testers can verify reels. `IG_ACCESS_TOKEN` must carry that permission.
+- [ ] WhatsApp Manager: create and get approved the utility template `payout_sent` (language `en`) with four body variables: name, amount, month, destination, e.g. "Hi {{1}}, your Afefehub payout of {{2}} for {{3}} has been sent to {{4}}. Thank you for reviewing!".
+- [ ] Publish the new Terms (points tiers, opt-in ENTER, monthly pro-rata pools, Nigeria-only transfers, duplicates, bans) and Privacy additions (bank details, fingerprints, Instagram username lookup, ban hashes and payment records kept after erasure) at least 14 days before the first window opens.
+- [ ] Monthly: `scripts/payout.py export`, decide, `settle --apply`, transfer, `mark-paid --apply`. Delete the spreadsheet and CSVs afterwards: they hold bank details.
+
 ### Infrastructure
 
 - [x] TLS 1.2+ on ALB and CloudFront, HTTP→HTTPS redirect, `drop_invalid_header_fields`, ECS circuit breaker with rollback, ECR scan on push, remote state with versioning and lock.

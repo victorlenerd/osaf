@@ -63,6 +63,7 @@ Category = Literal[
     "events_venue",
     "transport",
     "real_estate",
+    "shortlet",
     "services",
     "other",
 ]
@@ -221,6 +222,18 @@ class Submission(BaseModel):
     created_at: str = Field(default_factory=now_iso)
     expires_at: int | None = None
 
+    # Instagram metadata from the download (reels only); the username is what the original-
+    # author check compares against.
+    ig_username: str | None = None
+    ig_uploader_id: str | None = None
+    ig_posted_at: str | None = None
+    # Duplicate detection (app/fingerprint): exact hash of the media file, the stored
+    # fingerprint, and the closest existing review when it is too similar to earn points.
+    media_sha256: str | None = None
+    s3_fingerprint_key: str | None = None
+    similarity: SimilarityMatch | None = None
+    similarity_checked: bool = False
+
 
 class Conversation(BaseModel):
     phone: str
@@ -238,6 +251,10 @@ class Conversation(BaseModel):
     # number's reviews are gone. Written before the first review is deleted so a retry after
     # a failed run still knows which businesses it touched.
     erasure_businesses: list[str] = Field(default_factory=list)
+    # Payouts: when we last asked for bank details (the next message with an account number
+    # is read as the answer), and when a banned number was last told so (at most once a day).
+    payout_details_requested_at: str | None = None
+    ban_notice_at: str | None = None
     updated_at: str = Field(default_factory=now_iso)
     # DynamoDB TTL: conversations are kept 12 months after the last message (privacy policy).
     expires_at: int | None = None
@@ -348,3 +365,119 @@ class Review(BaseModel):
     face_check: FaceCheck | None = None
     created_at: str = Field(default_factory=now_iso)
     status: Literal["published", "hidden"] = "published"
+    ig_username: str | None = None
+    ig_uploader_id: str | None = None
+    ig_posted_at: str | None = None
+    # True once the sender has proven they posted the reel (app/rewards/verify.py); until then
+    # the reel is credited to its Instagram handle, not to the sender (app/credit.py).
+    ig_author_verified: bool = False
+    media_sha256: str | None = None
+    fingerprint_s3_key: str | None = None
+    # Set when the review is too close to an existing one to earn points (it still publishes).
+    similarity: SimilarityMatch | None = None
+    similarity_checked: bool = False
+
+
+# --------------------------------------------------------------------- fingerprints
+class Fingerprint(BaseModel):
+    """What app/fingerprint compares: stored as JSON in S3 and in the fingerprints index."""
+
+    sha256: str | None = None
+    audio: list[int] = Field(default_factory=list)  # Chromaprint raw sub-fingerprints (uint32)
+    video: list[int] = Field(default_factory=list)  # 64-bit dHash per sampled frame
+    text: list[int] = Field(default_factory=list)  # MinHash signature of the transcript
+
+
+class SimilarityMatch(BaseModel):
+    review_id: str
+    business_id: str | None = None
+    exact: bool = False
+    audio: float = 0.0
+    video: float = 0.0
+    text: float = 0.0
+
+
+# ------------------------------------------------------------------------- payouts
+# reel_unverified: a reel entered before its author check; worth 0 until verified, and voided
+# at settlement if it never is.
+EntryKind = Literal["voice", "reel_unverified", "reel_author"]
+EntryStatus = Literal["entered", "approved", "voided", "paid"]
+
+
+class PayoutEntry(BaseModel):
+    """One published review entered for a monthly payout window (RWD#<hash> / ENTRY#<rid>)."""
+
+    review_id: str
+    phone: str | None = None  # stripped when the reviewer erases their data after payment
+    phone_hash: str
+    business_id: str
+    business_name: str = ""
+    category: str = "other"
+    group: str = "others"
+    kind: EntryKind
+    points: int
+    window: str  # yyyy-mm, Africa/Lagos
+    status: EntryStatus = "entered"
+    ig_username: str | None = None
+    ig_code: str | None = None  # open author-verification code, if any
+    ig_verified_at: str | None = None
+    similarity: SimilarityMatch | None = None
+    similarity_checked: bool = True
+    rate_ngn: float | None = None  # naira per point, set at settlement
+    amount_ngn: int | None = None
+    note: str | None = None
+    entered_at: str = Field(default_factory=now_iso)
+    decided_at: str | None = None
+    paid_at: str | None = None
+
+
+class PayoutOffer(BaseModel):
+    """A published review the reviewer may still ENTER (RWD#<hash> / OFFER#<rid>, 7-day TTL)."""
+
+    review_id: str
+    phone: str
+    created_at: str = Field(default_factory=now_iso)
+    expires_at: int | None = None
+
+
+class Payee(BaseModel):
+    """How a reviewer wants to be paid (RWD#<hash> / PAYEE)."""
+
+    phone: str
+    method: Literal["bank", "amazon"] = "bank"
+    bank_name: str | None = None
+    account_number: str | None = None
+    account_name: str | None = None
+    updated_at: str = Field(default_factory=now_iso)
+
+    @property
+    def complete(self) -> bool:
+        if self.method == "amazon":
+            return True
+        return bool(self.bank_name and self.account_number and self.account_name)
+
+    def masked(self) -> str:
+        if self.method == "amazon":
+            return "Amazon gift card"
+        tail = (self.account_number or "")[-4:]
+        return f"{self.bank_name} ****{tail} ({self.account_name})"
+
+
+class Ban(BaseModel):
+    """BAN#<phone_hash>. Kept after erasure (a keyed hash only) so a banned person cannot
+    erase and come straight back."""
+
+    phone_hash: str
+    reason: str
+    note: str = ""
+    hide_reviews: bool = False
+    reviews_hidden: int = 0
+    entries_voided: int = 0
+    ig_usernames: list[str] = Field(default_factory=list)
+    banned_by: str = "operator"
+    banned_at: str = Field(default_factory=now_iso)
+
+
+# Submission and Review refer to SimilarityMatch, which is defined after them.
+Submission.model_rebuild()
+Review.model_rebuild()

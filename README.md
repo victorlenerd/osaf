@@ -31,7 +31,7 @@ Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/gl
    Instagram reel of you reviewing a place, **or just send a voice note** describing your visit.
    No app, no account. The agent transcribes it, asks at most three short questions if something
    is missing, shows you the structured review, and publishes it when you reply "OK".
-3. Text **points** to the same number to see your reviewer balance, or **delete my data** to erase
+3. Text **points** to the same number to see your payout entries, or **delete my data** to erase
    everything Afefehub holds about you (confirm with **DELETE**; it is gone within a minute).
 
 The public API needs no key:
@@ -76,7 +76,7 @@ unstructured speech into a searchable record that works for businesses Google ha
 | **Living summary** | After every published review, Muse Spark regenerates the business's summary: headline, recurring praise, recurring complaints, standout dishes or services. Counts and recommend rate are computed in code, never by the model. |
 | **Search** | Typeahead over business names *and the names reviewers actually said*, keywords, address and city, with fuzzy matching and a boost for well-reviewed, well-recommended businesses. Filter by 13 countries and 20 categories. |
 | **Google fallback** | Empty result? One tap checks Google Places and shows the listing with an AI summary of up to five live Google reviews (attributed, never stored). |
-| **Reviewer rewards** | 10 points per published review, glowing or grumpy; 100 points earns a US$10 Amazon gift card. Capped at 3 reviews per reviewer per rolling week. A thank-you, never payment for a particular opinion. |
+| **Reviewer payouts (Nigeria)** | Monthly cash payouts for reviews of Nigerian businesses: 5 pts per voice note, 10 pts per reel from its verified author (a reel someone else posted earns nothing) (the reviewer DMs a WhatsApp-issued code to @afefehub on Instagram from the posting account). After publishing, the agent asks whether to enter the review; only reviews entered with **ENTER** earn points, and only if they pass eligibility (Nigerian business, not a duplicate or near-duplicate by audio, video and transcript fingerprints, face check passed for reels, 3 reviews a week, reviewer not banned). 1 pt = up to ₦1,000 from monthly category pools (Shortlets, Restaurants and Hotels ₦1,000,000 each, everything else ₦500,000), paid pro rata when a pool is oversubscribed. A person reviews every entry before payment; payment is a bank transfer to a Nigerian account, or an Amazon gift card on request. Same points for every opinion. |
 | **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag, and a how-to-submit closer. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
 
 <p align="center">
@@ -201,8 +201,8 @@ environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md
 
 **Who it serves**
 
-- **Reviewers** get a home for the reviews they already film, in their own language, with points
-  towards a gift card and a country flag on every review.
+- **Reviewers** get a home for the reviews they already film, in their own language, with a country
+  flag on every review and, in Nigeria, monthly cash payouts for the reviews they enter.
 - **Businesses**, including ones with no Google listing, get a public page with verified video and
   voice reviews and a summary that tells them exactly what customers praise and complain about.
 - **Customers** get reviews they can look in the eye instead of anonymous stars.
@@ -216,8 +216,11 @@ environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md
    informal merchants.
 4. Concierge onboarding for business associations and markets that want their traders listed.
 
-**Integrity rules.** Same points for every opinion, positive or negative. The gift card is a
-thank-you, never payment for a particular review. Reviews are public reels or voice notes; nothing
+**Integrity rules.** Same points for every opinion, positive or negative: points depend only on the
+kind of review (voice note or your own verified reel), never on what it says.
+Payouts are a thank-you for taking part, never payment for a particular review. Duplicates and
+near-duplicates earn nothing, a person checks every entry before anyone is paid, and spam or abuse
+gets a reviewer banned with unpaid points forfeited. Reviews are public reels or voice notes; nothing
 is typed in. The terms, privacy policy and operator (1CTECH, Ontario, Canada) are published on the
 site.
 

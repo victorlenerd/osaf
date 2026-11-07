@@ -4,7 +4,9 @@ const now = "2026-10-28T14:20:00Z";
 
 const MOCK_BASE = `http://localhost:${process.env.PORT || 8000}`;
 
-function review(id, shortcode, name, country, extraction, createdAt) {
+// A reel review. By default the sender verified they posted it, so it is credited to them and
+// their handle; pass `credit` to model a reel someone else posted (credited to its poster).
+function review(id, shortcode, name, country, extraction, createdAt, credit) {
   return {
     review_id: id,
     created_at: createdAt,
@@ -14,7 +16,10 @@ function review(id, shortcode, name, country, extraction, createdAt) {
     audio_url: null,
     reviewer_display_name: name,
     reviewer_country: country,
+    reel_author: name ? `${name.toLowerCase().replace(/[^a-z]/g, "")}.eats` : null,
+    shared_by: null,
     extraction,
+    ...credit,
   };
 }
 
@@ -29,6 +34,8 @@ function voiceReview(id, name, country, extraction, createdAt) {
     audio_url: `${MOCK_BASE}/api/review/${id}/audio`,
     reviewer_display_name: name,
     reviewer_country: country,
+    reel_author: null,
+    shared_by: null,
     extraction,
   };
 }
@@ -126,6 +133,7 @@ export const businesses = [
           one_line_summary: "Food dey sweet well well but the inside hot and tight.",
         },
         "2026-10-15T11:00:00Z",
+        { reviewer_display_name: null, reviewer_country: null, reel_author: "yaba.food.diaries", shared_by: "Chidi" },
       ),
       review(
         "rev_003",

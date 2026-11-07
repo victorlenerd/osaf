@@ -1,4 +1,6 @@
-"""Publish a confirmed submission: review + business upsert + summary + search index."""
+"""Publish a confirmed submission: review + business upsert + summary + search index, then
+the payout offer (reviews no longer earn points by being published; the reviewer ENTERs
+them, see app/rewards/flow.py)."""
 
 from __future__ import annotations
 
@@ -9,33 +11,100 @@ from ulid import ULID
 from app.agent.places import country_from_phone
 from app.agent.summary import generate_summary
 from app.config import get_settings
-from app.models import Conversation, Review, Submission, SubmissionState, now_iso
+from app.fingerprint import check as fpcheck
+from app.fingerprint import index as fpindex
+from app.models import Conversation, Fingerprint, Review, Submission, SubmissionState, now_iso
+from app.moderation import bans
 from app.pipeline.quota import phone_hash, slots_line, weekly_quota
+from app.rewards import flow as rewards
 from app.store import dynamo, opensearch, s3
+from app.store import rewards_store as rstore
 from app.whatsapp import client as wa
 
 __all__ = ["business_url", "phone_hash", "publish_submission"]
 
 log = logging.getLogger(__name__)
 
+DUPLICATE_MSG = (
+    "This {what} matches a review that's already on Afefehub, so I won't publish it again. "
+    "Send a fresh review of a place you visited anytime."
+)
+
 
 def business_url(business_id: str) -> str:
     return f"{get_settings().public_site_url}/business?id={business_id}"
 
 
+def _reject(sub: Submission, reason: str, message: str) -> None:
+    sub.state = SubmissionState.REJECTED
+    sub.error = reason
+    sub.state_updated_at = now_iso()
+    dynamo.put_submission(sub)
+    wa.send_text(sub.phone, message)
+
+
+def _retain_media(sub: Submission, review_id: str) -> dict[str, str]:
+    """Copy what a published review needs out of submissions/ (which expires after 30 days)
+    into reviews/<id>/. Returns {old_key: new_key}; a failed copy keeps the old key."""
+    keys = [
+        sub.s3_video_key,
+        sub.s3_voice_key,
+        sub.s3_transcript_key,
+        s3.Keys.transcript_txt(sub.submission_id) if sub.s3_transcript_key else None,
+        sub.s3_facecheck_key,
+        sub.s3_fingerprint_key,
+    ]
+    moved: dict[str, str] = {}
+    for key in filter(None, keys):
+        try:
+            moved[key] = s3.copy(key, s3.Keys.review_copy(review_id, key))
+        except Exception:  # noqa: BLE001
+            log.exception("could not retain %s for review %s", key, review_id)
+    return moved
+
+
+def _load_fingerprint(sub: Submission) -> Fingerprint | None:
+    if not sub.s3_fingerprint_key:
+        return None
+    try:
+        return Fingerprint(**s3.get_json(sub.s3_fingerprint_key))
+    except Exception:  # noqa: BLE001
+        log.exception("could not load fingerprint for %s", sub.submission_id)
+        return None
+
+
 def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     ext = sub.extraction
     assert ext is not None, "cannot publish without an extraction"
+    what = "voice note" if sub.kind == "voice" else "reel"
+    if bans.is_banned(sub.phone):
+        _reject(sub, "banned", bans.BANNED_MSG)
+        return None
     review_id = str(ULID())
     if sub.kind == "reel" and not dynamo.claim_reel(sub.reel_shortcode or "", review_id):
-        sub.state = SubmissionState.REJECTED
-        sub.error = "reel already reviewed"
-        sub.state_updated_at = now_iso()
-        dynamo.put_submission(sub)
-        wa.send_text(
-            sub.phone, "That reel has already been published on Afefehub, so I won't add it twice."
+        _reject(
+            sub,
+            "reel already reviewed",
+            "That reel has already been published on Afefehub, so I won't add it twice.",
         )
         return None
+    if sub.media_sha256 and not rstore.claim_media(sub.media_sha256, review_id):
+        if sub.kind == "reel" and sub.reel_shortcode:
+            dynamo.delete_reel_claim(sub.reel_shortcode)  # taken a moment ago, for this review
+        _reject(sub, "duplicate media", DUPLICATE_MSG.format(what=what))
+        return None
+
+    fp = _load_fingerprint(sub)
+    if fp is not None and not sub.similarity_checked:
+        # The pipeline could not reach the index; try once more before deciding on points.
+        verdict = fpcheck.check(fp)
+        sub.similarity_checked = verdict.checked
+        sub.similarity = verdict.similar
+
+    moved = _retain_media(sub, review_id)
+
+    def kept(key: str | None) -> str | None:
+        return moved.get(key, key) if key else None
 
     review = Review(
         review_id=review_id,
@@ -48,15 +117,24 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         reel_url=sub.reel_url,
         reel_shortcode=sub.reel_shortcode,
         extraction=ext,
-        transcript_s3_key=sub.s3_transcript_key,
-        video_s3_key=sub.s3_video_key,
-        audio_s3_key=sub.s3_voice_key,
+        transcript_s3_key=kept(sub.s3_transcript_key),
+        video_s3_key=kept(sub.s3_video_key),
+        audio_s3_key=kept(sub.s3_voice_key),
         face_check=sub.face_check,
+        ig_username=sub.ig_username,
+        ig_author_verified=bool(sub.ig_username)
+        and rstore.get_ig_link(sub.ig_username) == phone_hash(sub.phone),
+        ig_uploader_id=sub.ig_uploader_id,
+        ig_posted_at=sub.ig_posted_at,
+        media_sha256=sub.media_sha256,
+        fingerprint_s3_key=kept(sub.s3_fingerprint_key),
+        similarity=sub.similarity,
+        similarity_checked=sub.similarity_checked,
     )
     dynamo.put_review(review)
     business = dynamo.upsert_business_on_publish(ext)
 
-    reviews = dynamo.list_reviews(business.business_id)
+    reviews = [r for r in dynamo.list_reviews(business.business_id) if r.status == "published"]
     previous = dynamo.get_summary(business.business_id)
     summary = generate_summary(business, reviews, previous)
     dynamo.put_summary(business.business_id, summary)
@@ -67,6 +145,13 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         opensearch.upsert_business(business, summary)
     except Exception:  # noqa: BLE001
         log.exception("opensearch upsert failed for %s", business.business_id)
+    if fp is not None:
+        try:
+            fpindex.put(
+                review_id, business.business_id, review.reviewer_phone_hash, review.created_at, fp
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("fingerprint index failed for %s", review_id)
 
     sub.review_id = review_id
     sub.business_id = business.business_id
@@ -75,9 +160,6 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     sub.state_updated_at = now_iso()
     dynamo.put_submission(sub)
 
-    # Reward only once the PUBLISHED marker is durable: a crash before it reruns the pipeline.
-    points = get_settings().points_per_review
-    total = dynamo.add_points(sub.phone, points)
     q = weekly_quota(sub.phone)  # the review just written already counts against this week
 
     conv.active_submission_id = None
@@ -87,12 +169,18 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         conv.profile_country = ext.business.country
     dynamo.put_conversation(conv)
 
-    wa.send_text(
-        sub.phone,
+    # The offer is recorded only once the PUBLISHED marker is durable.
+    offer = rewards.offer_after_publish(review, sub.phone)
+    body = (
         f"Published! 🎉 Your review of {business.name} is live:\n"
         f"{business_url(business.business_id)}\n\n"
-        f"That's review #{business.review_count} for this business. ⭐ +{points} points, "
-        f"you now have {total}.\n\n{slots_line(q)} Send another reel or voice note anytime; "
-        "text *points* to check your balance.",
+        f"That's review #{business.review_count} for this business."
     )
+    if offer:
+        body += f"\n\n{offer}"
+    body += (
+        f"\n\n{slots_line(q)} Send another reel or voice note anytime; text *points* to see "
+        "your payout entries."
+    )
+    wa.send_text(sub.phone, body)
     return review

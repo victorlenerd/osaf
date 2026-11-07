@@ -54,6 +54,20 @@ class Keys:
         return f"submissions/{sid}/agent_trace.jsonl"
 
     @staticmethod
+    def fingerprint(sid: str) -> str:
+        return f"submissions/{sid}/fingerprint.json"
+
+    # A published review's own copy of its media, transcript and fingerprint. Everything under
+    # submissions/ expires after 30 days; reviews/ is kept while the review is published.
+    @staticmethod
+    def review_prefix(review_id: str) -> str:
+        return f"reviews/{review_id}/"
+
+    @staticmethod
+    def review_copy(review_id: str, submission_key: str) -> str:
+        return f"reviews/{review_id}/{submission_key.split('/', 2)[-1]}"
+
+    @staticmethod
     def summary_history(business_id: str, ts: str) -> str:
         safe = business_id.replace("/", "_")
         return f"businesses/{safe}/summary_history/{ts}.json"
@@ -103,6 +117,12 @@ def append_jsonl(line: dict, key: str) -> None:
     _client().put_object(
         Bucket=s.media_bucket, Key=key, Body=existing.encode(), ContentType="application/x-ndjson"
     )
+
+
+def copy(src_key: str, dst_key: str) -> str:
+    bucket = get_settings().media_bucket
+    _client().copy_object(Bucket=bucket, Key=dst_key, CopySource={"Bucket": bucket, "Key": src_key})
+    return dst_key
 
 
 def get_json(key: str):

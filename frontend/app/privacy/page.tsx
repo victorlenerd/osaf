@@ -59,6 +59,20 @@ const sections: LegalSection[] = [
           <li>Structured review fields: the business named, when and where the visit happened as you describe it, what was good, what could improve, whether you recommend the business, category, keywords, a one-line summary and a sentiment label;</li>
           <li>Per-business aggregates, such as the recommendation rate and the AI summary, which combine your review with others.</li>
         </ul>
+        <h3>If you take part in the payout programme</h3>
+        <ul>
+          <li>Your payout entries: which reviews you entered, the points each earned, their status (entered, approved, voided or paid) and the amount paid;</li>
+          <li>Your bank details, which you send us over WhatsApp: bank name, 10-digit account number and account name. If you ask for an Amazon gift card instead, we record that choice;</li>
+          <li>If you verify that you posted a reel: the code we send you, the Instagram direct message you send @afefehub with it, the Instagram username of the account that sent it (which we look up through Instagram&rsquo;s messaging API), and the link between that Instagram account and your WhatsApp number;</li>
+          <li>If we ban a number for spam or abuse: the reason, a note and the date.</li>
+        </ul>
+        <h3>Fingerprints for duplicate detection</h3>
+        <p>
+          For every reel and voice note we compute fingerprints of the media and the transcript: a hash of the file, an audio fingerprint,
+          short hashes of video frames, and a compact signature of the transcript&rsquo;s wording. We compare them with the fingerprints of
+          existing reviews to catch the same recording or the same words being submitted twice. These fingerprints identify a recording, not
+          a person: they are not face templates or voiceprints, and they cannot be used to recognise you in a different recording.
+        </p>
         <h3>From website and API visitors</h3>
         <ul>
           <li>Standard server and content-delivery logs: IP address, approximate location derived from it, browser and device type, the pages and API endpoints requested, referring page, and timestamps;</li>
@@ -70,8 +84,9 @@ const sections: LegalSection[] = [
           <li>Your name, email address, role and the content of your message when you email us or send a takedown notice.</li>
         </ul>
         <p>
-          We do not collect payment information, government identifiers, or precise device location. We do not ask reviewers for their
-          age, address or any information beyond the reel link, but what you say in the video is up to you.
+          We do not collect card details, government identifiers, or precise device location. We ask for bank details only from reviewers
+          who enter the payout programme. Otherwise we do not ask reviewers for their age, address or any information beyond the reel link or
+          voice note, but what you say in it is up to you.
         </p>
       </>
     ),
@@ -111,11 +126,16 @@ const sections: LegalSection[] = [
             interest in making reviews useful and comparable, balanced against the fact that the underlying reviews are already public.
           </li>
           <li>
+            <strong>To run the payout programme</strong>: offering to enter your eligible reviews, recording your entries and points,
+            verifying that you posted a reel, having a person review each entry, and paying you. We use your bank details only to pay you.{" "}
+            <em>Basis:</em> performance of the agreement in our Terms, which you enter when you reply ENTER.
+          </li>
+          <li>
             <strong>To ask you clarifying questions</strong> over WhatsApp. <em>Basis:</em> performance of the agreement in our Terms.
           </li>
           <li>
-            <strong>To prevent fraud, spam and abuse</strong>, such as detecting coordinated campaigns, duplicate submissions or attempts to
-            manipulate our models. <em>Basis:</em> legitimate interest in the integrity of the Service.
+            <strong>To prevent fraud, spam and abuse</strong>, such as detecting coordinated campaigns, duplicate or near-duplicate submissions
+            (using the fingerprints described in section 2), attempts to manipulate our models or the payout programme, and enforcing bans. <em>Basis:</em> legitimate interest in the integrity of the Service.
           </li>
           <li>
             <strong>To operate, secure and improve the website and API</strong>, including debugging, capacity planning and measuring which
@@ -151,6 +171,8 @@ const sections: LegalSection[] = [
           <strong>We do not perform facial recognition.</strong> We do not create a face template or voiceprint, we do not attempt to
           identify you or match you against any database, and we do not compare faces across reviews to work out whether two reviews are
           from the same person. Your image and voice are processed only to confirm that a person is speaking and to transcribe what is said.
+          The duplicate-detection fingerprints in section 2 compare recordings, not people: they tell us whether a file, soundtrack or video
+          has been submitted before, not who is in it.
         </p>
         <p>
           Your voice is transcribed by Meta&rsquo;s Muse Voice Transcribe model, and the transcript is processed by Muse Spark to extract the
@@ -173,7 +195,12 @@ const sections: LegalSection[] = [
         <p>
           Whether a submitted reel is accepted or rejected is decided automatically, without a person reviewing it, based on the checks
           described above and on content rules in our Terms. Transcripts, review fields, sentiment labels and summaries are also generated
-          automatically and may contain errors.
+          automatically and may contain errors. A submission that matches an existing review closely enough is rejected automatically as a
+          duplicate.
+        </p>
+        <p>
+          Payout entries are different: a person at {B} reviews every entry before anything is paid, and decides whether to approve or void
+          it, or to ban a number for spam or abuse.
         </p>
         <p>
           If a submission is rejected, we tell you why over WhatsApp. If you think a decision or an AI output is wrong, reply on WhatsApp or
@@ -205,10 +232,12 @@ const sections: LegalSection[] = [
             fetched live from Google Places each time the page loads and is not stored by us; we cache only the Google place
             identifier and an AI-generated summary of those reviews, for up to 24 hours;
           </li>
-          <li><strong>Instagram</strong>: we fetch your public reel from Instagram, and the business page embeds it from Instagram&rsquo;s servers, which means Instagram learns that a visitor loaded that embed.</li>
+          <li><strong>Instagram</strong>: we fetch your public reel from Instagram, and the business page embeds it from Instagram&rsquo;s servers, which means Instagram learns that a visitor loaded that embed. When you verify a reel, Instagram carries your direct message to us and tells us the username of the account that sent it;</li>
+          <li><strong>Our bank</strong>: to pay you by bank transfer, we give the bank we pay from your account name, account number, bank name and the amount.</li>
         </ul>
         <h3>Others</h3>
         <ul>
+          <li><strong>Nobody else sees your bank details</strong>: they are never published or shared with businesses;</li>
           <li><strong>Businesses and complainants</strong>: if a business sends a takedown notice about your review, we may share the substance of their complaint with you and, if you respond, your response with them, without revealing your phone number;</li>
           <li><strong>Authorities and legal process</strong>: where required by law, court order or to protect the rights, safety or property of {B}, our users or the public;</li>
           <li><strong>A successor</strong>: if {B} is acquired or merges, personal data may transfer to the new operator under this policy; we will notify reviewers over WhatsApp or on the website.</li>
@@ -265,6 +294,10 @@ const sections: LegalSection[] = [
         <ul>
           <li><strong>Published reviews</strong> (review fields, transcript, display name, reel link) are kept for as long as the review is published, and deleted within 30 days of your withdrawal request or of our removing the review;</li>
           <li><strong>Our stored copy of your video and audio</strong> is kept while the review is published, so that we can re-run the pipeline when our models improve, and deleted within 30 days of withdrawal or removal;</li>
+          <li><strong>Fingerprints</strong> of a review&rsquo;s media and transcript are kept while the review is published and deleted with it;</li>
+          <li><strong>Bank details</strong> are kept while you take part in the payout programme, and deleted when you text <em>delete my data</em> or leave the programme;</li>
+          <li><strong>Payout entries</strong> not yet paid, and the link between a verified Instagram account and your number, are deleted when you text <em>delete my data</em>. Records of payments already made (the amount, the date and the reviews they covered) are kept for accounting, with your phone number removed;</li>
+          <li><strong>Ban records</strong>: if your number was banned for spam or abuse, we keep a one-way hash of it after you delete your data, so that the ban still applies. It is used only for fraud prevention;</li>
           <li><strong>Rejected or abandoned submissions</strong>, including any downloaded media, are deleted within 30 days;</li>
           <li><strong>WhatsApp conversations</strong> are kept for 12 months after the last message, so that we can handle follow-up questions and withdrawal requests from the same number, then deleted. We keep a hashed form of your phone number for a further 12 months only to enforce blocks for abuse;</li>
           <li><strong>Aggregates</strong> such as a business&rsquo;s recommendation rate and AI summary may continue to reflect a withdrawn review&rsquo;s vote until the summary is next regenerated, which happens on the next review for that business or within 30 days, whichever is sooner. Aggregates do not identify you;</li>
@@ -406,6 +439,8 @@ export default function PrivacyPage() {
       related={{ href: "/terms", label: "Terms of Service" }}
       intro={
         <p>
+          {/* TODO: effective date. The payout additions are a material change: bump LEGAL.privacyEffective and notify
+              reviewers before they take effect. */}
           {B} turns public Instagram reels into structured business reviews. That involves processing video of people&rsquo;s faces and
           recordings of their voices, so we want to be clear about exactly what we collect, what we do with it, who sees it, and how you can
           control it.
@@ -415,6 +450,7 @@ export default function PrivacyPage() {
         "We collect your WhatsApp number and messages, your public reel (video, audio, username), and the transcript and review we extract from it.",
         "We check that a real person is speaking on camera. We do not do facial recognition, create face or voice templates, or identify you.",
         "Your Instagram display name and the review are public. Your phone number is never published or shared with the business.",
+        "If you enter the Nigeria payout programme, we also hold your bank details (only to pay you) and your payout entries. We fingerprint media and transcripts to catch duplicates; fingerprints identify a recording, not a person.",
         "Processing is done by Meta's models and hosted on AWS in the United States. Nothing is sold and nothing is used for advertising.",
         "Our website sets no cookies. Embedded Instagram reels are served by Instagram under Meta's cookie policy.",
         "You can delete everything we hold about you yourself, in a minute, by texting \"delete my data\" to our WhatsApp number from the number you used. Email requests are answered within 30 days.",

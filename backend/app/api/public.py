@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from app.agent.places import get_place_details, search_places
 from app.agent.summary import summarize_google_reviews
 from app.config import get_settings
+from app.credit import credit
 from app.models import CATEGORIES, Review
 from app.store import dynamo, opensearch, s3
 
@@ -74,8 +75,7 @@ def business(business_id: str):
                 "reel_url": r.reel_url,
                 "reel_shortcode": r.reel_shortcode,
                 "audio_url": audio_url(r),
-                "reviewer_display_name": r.reviewer_display_name,
-                "reviewer_country": r.reviewer_country,
+                **_credit(r),
                 "extraction": r.extraction.model_dump(
                     exclude={"business", "confidence"}, exclude_none=True
                 ),
@@ -83,6 +83,16 @@ def business(business_id: str):
             for r in reviews
             if r.status == "published"
         ],
+    }
+
+
+def _credit(r: Review) -> dict:
+    c = credit(r)
+    return {
+        "reviewer_display_name": c.name,
+        "reviewer_country": c.country,
+        "reel_author": c.handle,
+        "shared_by": c.shared_by,
     }
 
 

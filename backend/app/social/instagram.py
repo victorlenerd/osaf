@@ -13,6 +13,7 @@ media_publish is reported, never repeated blindly, so a post cannot go out twice
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -136,6 +137,22 @@ class InstagramClient:
 
     def publish(self, creation_id: str) -> str:
         return str(self._post(f"{self.user_id}/media_publish", {"creation_id": creation_id})["id"])
+
+    # -------------------------------------------------------------- messaging
+    # Instagram messaging (instagram_business_manage_messages): the webhook gives a sender's
+    # Instagram-scoped id; the profile lookup turns it into a username, and replies go out
+    # through /{ig-user-id}/messages.
+    def username_of(self, igsid: str) -> str:
+        return str(self._get(igsid, {"fields": "username"}).get("username", "")).lower()
+
+    def send_dm(self, igsid: str, text: str) -> None:
+        self._post(
+            f"{self.user_id}/messages",
+            {
+                "recipient": json.dumps({"id": igsid}),
+                "message": json.dumps({"text": text[:1000]}),
+            },
+        )
 
 
 def client_from_settings(s: Settings | None = None) -> InstagramClient:

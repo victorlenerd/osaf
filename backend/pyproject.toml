@@ -23,7 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "respx>=0.21"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "respx>=0.21", "openpyxl>=3.1"]
+# Operator scripts (monthly payout spreadsheet) run from a laptop, never in the container.
+ops = ["openpyxl>=3.1"]
 
 [tool.ruff]
 line-length = 100

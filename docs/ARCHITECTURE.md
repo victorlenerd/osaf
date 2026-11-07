@@ -76,6 +76,44 @@ served through `GET /api/review/<id>/audio`, which looks the review up via a `RE
 pointer item and 302-redirects to a one-hour presigned URL (S3 handles range requests, so the
 browser streams and seeks directly).
 
+## Duplicates, payouts and bans
+
+**Fingerprints** (`app/fingerprint/`). While the media is still on local disk the pipeline
+computes a sha256 of the file, a Chromaprint audio fingerprint (`fpcalc`), one 64-bit dHash per
+second of video (`ffmpeg`), and, after transcription, a MinHash of the transcript's word
+5-shingles. The OpenSearch index `fingerprints` holds one document per published review, with
+band tokens to find candidates and the full fingerprint to score them. A submission whose media
+matches a published review (exact hash, audio ≥ `dup_audio_threshold`, video ≥
+`dup_video_threshold`) is REJECTED before any model is paid to listen to it; one that is merely
+similar (including transcript text ≥ `similar_text_threshold`) publishes but earns no points.
+`MEDIA#<sha256>` is the race-proof exact-copy lock, next to `REEL#<shortcode>`.
+`scripts/fingerprint_report.py` lists close pairs to tune the thresholds.
+
+**Payouts** (`app/rewards/`, Nigeria only). Publishing no longer adds points. An eligible
+review (business in `payout_country`, not similar, face check passed for reels, reviewer not
+banned) gets an *ENTER* offer (`RWD#<hash>/OFFER#<rid>`, 7-day TTL). ENTER creates
+`RWD#<hash>/ENTRY#<rid>` in the current Lagos-time month (`GSI1: WINDOW#<yyyy-mm>`): 5 pts for a
+voice note, 10 for the reviewer's own reel; a reel someone else posted earns nothing (no offer
+when its account is unknown or verified to another reviewer, and an unverified reel is entered
+at 0 and voided at settlement unless its author is proven). Ownership is proven by
+DMing a code (`IGCODE#`) to Afefehub's Instagram from the account that posted the reel; the
+Instagram messaging webhook (`/webhooks/instagram`) matches the sender's username to the
+reel's (yt-dlp `channel`) and links the account to the reviewer (`IGLINK#<username>`, one
+reviewer per account), so later reels from it count as theirs at once. Bank details
+(`RWD#<hash>/PAYEE`) are collected over WhatsApp. Once a month `scripts/payout.py` exports the
+window to a spreadsheet for a person to approve, void or ban each entry, settles each category
+group's pool pro rata (`app/rewards/settle.py`), writes the transfer list, and after the
+manual bank transfers marks entries paid and sends the `payout_sent` WhatsApp template.
+
+**Bans** (`app/moderation/bans.py`, `scripts/ban_reviewer.py`). `BAN#<hash>` stops a number
+at intake (after the erasure commands, so a banned person can still delete their data) and at
+publish, voids unpaid entries, marks their verified Instagram accounts (`BANIG#`) so reels from
+them are refused, and can hide all their reviews. Bans and paid entries (number stripped)
+survive erasure; everything else under `RWD#<hash>` is deleted with the rest.
+
+**Retention.** At publish the review's media, transcript, face-check result and fingerprint are
+copied to `reviews/<id>/`; `submissions/` still expires after 30 days.
+
 ## Deployment
 Terraform in `infra/terraform/`: Route53 zone, ACM, S3 + CloudFront (site), ECS Fargate + ALB
 (API), DynamoDB, OpenSearch (1 × t3.small), ECR, SSM parameters for secrets.
