@@ -22,6 +22,10 @@ from app.models import PlaceCandidate
         ("", None),
         (None, None),
         ("Atlantis", None),  # never a guess like "AT"
+        ("UK", "GB"),  # a two-letter alias, not the ISO code
+        ("uk", "GB"),
+        ("United Kingdom", "GB"),
+        ("GB", "GB"),
     ],
 )
 def test_country_code(raw, code):

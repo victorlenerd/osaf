@@ -81,6 +81,9 @@ _NAMES: dict[str, str] = {
     "uae": "AE",
 }
 _ALPHA2 = re.compile(r"^[A-Za-z]{2}$")
+# Two-letter values in common use that are not the ISO code. Checked before a two-letter value
+# is passed through, so "UK" is stored as GB like every other spelling of the country.
+_TWO_LETTER_ALIASES = {"UK": "GB"}
 
 
 def country_code(value: str | None) -> str | None:
@@ -90,5 +93,5 @@ def country_code(value: str | None) -> str | None:
     if not v:
         return None
     if _ALPHA2.match(v):
-        return v.upper()
+        return _TWO_LETTER_ALIASES.get(v.upper(), v.upper())
     return _NAMES.get(" ".join(v.lower().split()))
