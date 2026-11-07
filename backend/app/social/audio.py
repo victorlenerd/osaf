@@ -13,6 +13,7 @@ import logging
 import math
 import subprocess
 from array import array
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,17 +77,9 @@ def probe_duration_ms(path: Path) -> int:
         raise ReviewAudioError(f"ffprobe could not read {path.name}: {out.stderr.strip()}") from e
 
 
-def local_audio(c: Candidate, audio_dir: Path) -> ReviewAudio | None:
-    """``<audio_dir>/<review_id>.<ext>``: for samples and for re-renders without AWS."""
-    for ext in AUDIO_EXTS:
-        p = audio_dir / f"{c.review_id}{ext}"
-        if p.exists():
-            return ReviewAudio(c.review_id, p, probe_duration_ms(p))
-    return None
-
-
-def fetch_audio(c: Candidate, work: Path) -> ReviewAudio | None:
-    """Download the review's audio from S3 into ``work``. Read-only."""
+def s3_sources(c: Candidate, work: Path) -> Iterator[Path]:
+    """Download each S3 key that may hold the review's audio into ``work``, best first, lazily:
+    the caller stops pulling as soon as one decodes. Missing keys are skipped. Read-only."""
     from botocore.exceptions import ClientError
 
     from app.store import s3
@@ -98,8 +91,34 @@ def fetch_audio(c: Candidate, work: Path) -> ReviewAudio | None:
         except ClientError as e:
             log.info("no audio at %s: %s", key, e)
             continue
-        return ReviewAudio(c.review_id, dest, probe_duration_ms(dest))
-    return None
+        yield dest
+
+
+def local_sources(c: Candidate, audio_dir: Path) -> Iterator[Path]:
+    """``<audio_dir>/<review_id>.<ext>`` files, in AUDIO_EXTS order."""
+    for ext in AUDIO_EXTS:
+        p = audio_dir / f"{c.review_id}{ext}"
+        if p.exists():
+            yield p
+
+
+def first_clip(
+    review_id: str, sources: Iterable[Path], *, max_s: float = MAX_SECONDS
+) -> tuple[ReviewAudio, Clip]:
+    """The first source that probes and decodes, as (audio, clip). A file that downloads but
+    cannot be read (corrupt, or a video with no audio track) falls through to the next one.
+    Raises ReviewAudioError naming why each source failed, or that there were none."""
+    errors: list[str] = []
+    for path in sources:
+        try:
+            audio = ReviewAudio(review_id, path, probe_duration_ms(path))
+            return audio, make_clip(audio, max_s=max_s)
+        except ReviewAudioError as e:
+            log.info("audio source %s unusable: %s", path.name, e)
+            errors.append(f"{path.name}: {e}")
+    if not errors:
+        raise ReviewAudioError("no audio found")
+    raise ReviewAudioError("no usable audio (" + "; ".join(errors) + ")")
 
 
 # ---------------------------------------------------------------------- decoding

@@ -56,6 +56,25 @@ def new_record(run_id: str, account: str, previous: dict | None = None) -> dict:
     return rec
 
 
+def merge_records(*records: dict) -> dict:
+    """One record from several copies of it (the local published.json and the S3 one): a post
+    is done if any copy lists it, so a rerun never repeats a post one copy missed."""
+    out = dict(records[0])
+    out["reels"], out["earlier"] = [], []
+    seen_reels: set[str] = set()
+    for rec in records:
+        if out.get("carousel") is None and rec.get("carousel") is not None:
+            out["carousel"] = rec["carousel"]
+        for r in rec.get("reels") or []:
+            if r.get("review_id") not in seen_reels:
+                seen_reels.add(r.get("review_id"))
+                out["reels"].append(r)
+        for e in rec.get("earlier") or []:
+            if e not in out["earlier"]:
+                out["earlier"].append(e)
+    return out
+
+
 def pending(record: dict, reels: list[ReelJob]) -> tuple[bool, list[ReelJob]]:
     done = {r.get("review_id") for r in record.get("reels") or []}
     return record.get("carousel") is None, [j for j in reels if j.review_id not in done]

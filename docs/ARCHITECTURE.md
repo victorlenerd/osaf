@@ -121,7 +121,8 @@ that plays the reviewer's whole recording (`--no-reels` makes the carousel only)
    `s3://<media bucket>/social/weekly/<window>/` (Reels under `reels/`) and Meta fetches them through
    3 h presigned URLs. A typed `yes` (or `--yes`) guards the whole run after listing every post and
    checking the 24 h quota covers them. Each post is written to `published.json` (locally and in S3)
-   the moment it is live, and a rerun skips whatever is recorded, so a partial failure can be
+   the moment it is live, and a rerun skips whatever either copy records (the S3 one is read
+   too, so this holds from another machine), so a partial failure can be
    finished without posting twice. A failed carousel stops the run; a failed Reel is reported and
    the next still goes. `--preflight` only reads the account name and the 24 h quota.
 

@@ -118,6 +118,14 @@ def get_json(key: str):
     return json.loads(body)
 
 
+def get_json_or_none(key: str):
+    """``get_json``, or None when the object does not exist. Other errors propagate."""
+    try:
+        return get_json(key)
+    except _client().exceptions.NoSuchKey:
+        return None
+
+
 def download_file(key: str, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     _client().download_file(get_settings().media_bucket, key, str(path))

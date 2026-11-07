@@ -731,24 +731,58 @@ def _wav(path, seconds: float, gaps=((1.0, 1.5),)):
 def test_make_clip_keeps_the_whole_recording_and_caps_only_past_the_limit(tmp_path):
     c1, c2 = _cand(1, "Proper Surulere amala worth the queue."), _cand(2, "Fine coffee.")
     _wav(tmp_path / "r1.wav", 4.0)
-    a = au.local_audio(c1, tmp_path)
-    assert a is not None and abs(a.duration_ms - 4000) < 50
-    assert au.local_audio(c2, tmp_path) is None
-    whole = au.make_clip(a)
+    a, whole = au.first_clip("r1", au.local_sources(c1, tmp_path))
+    assert abs(a.duration_ms - 4000) < 50
+    assert list(au.local_sources(c2, tmp_path)) == []
     assert (whole.start_ms, whole.end_ms) == (0, a.duration_ms)
     assert abs(whole.duration_s - 4.0) < 0.05
     capped = au.make_clip(a, max_s=2.5)
     assert capped.end_ms == 2500 and abs(capped.duration_s - 2.5) < 0.05
     _wav(tmp_path / "r2.wav", 0.4, gaps=())
     with pytest.raises(au.ReviewAudioError, match="too short"):
-        au.make_clip(au.local_audio(c2, tmp_path))
+        au.first_clip("r2", au.local_sources(c2, tmp_path))
+
+
+@needs_ffmpeg
+def test_first_clip_falls_through_an_unreadable_source(tmp_path):
+    (tmp_path / "r1.m4a").write_bytes(b"not audio at all")  # tried first, fails to probe
+    _wav(tmp_path / "r1.wav", 2.0)
+    src, clip = au.first_clip("r1", au.local_sources(_cand(1, "x" * 30), tmp_path))
+    assert src.path.name == "r1.wav" and abs(clip.duration_s - 2.0) < 0.05
+    with pytest.raises(au.ReviewAudioError, match="no audio found"):
+        au.first_clip("r9", iter(()))
+    with pytest.raises(au.ReviewAudioError, match=r"r1\.m4a"):
+        au.first_clip("r1", [tmp_path / "r1.m4a"])
+
+
+def test_s3_sources_skips_missing_keys_and_is_lazy(monkeypatch, tmp_path):
+    from botocore.exceptions import ClientError
+
+    from app.store import s3
+
+    c = _cand(1, "x" * 30)
+    c.submission_id, c.audio_s3_key = "sub1", "submissions/sub1/voice.m4a"
+    tried: list[str] = []
+
+    def download(key, dest):
+        tried.append(key)
+        if key.endswith(".m4a"):
+            raise ClientError({"Error": {"Code": "404"}}, "GetObject")
+        dest.write_bytes(b"x")
+        return dest
+
+    monkeypatch.setattr(s3, "download_file", download)
+    it = au.s3_sources(c, tmp_path)
+    assert next(it).name == "r1.wav"  # m4a missing, the transcription WAV next
+    assert tried == ["submissions/sub1/voice.m4a", "submissions/sub1/audio.wav"]
+    assert next(it).name == "r1.ogg"  # only fetched when the WAV is not good enough
 
 
 @needs_ffmpeg
 def test_render_review_reel_end_to_end(tmp_path):
     c1 = _cand(1, "Proper Surulere amala worth the queue.")
     _wav(tmp_path / "r1.wav", 4.0)
-    clip = au.make_clip(au.local_audio(c1, tmp_path))
+    _, clip = au.first_clip("r1", au.local_sources(c1, tmp_path))
     w = window_from_dates("2026-10-20", "2026-10-27")
     res = rl.render_review_reel(c1, clip, w, tmp_path / "out", flag_fetch=False)
     want = clip.duration_s + rl.TAIL_S + rl.CTA_S
@@ -875,6 +909,21 @@ def test_publish_week_stops_when_the_carousel_fails(monkeypatch, tmp_path):
         say=lambda m: None,
     )  # fmt: skip
     assert not ok and fake.calls == [] and rec["carousel"] is None
+
+
+def test_merge_records_counts_a_post_done_if_any_copy_lists_it(tmp_path):
+    local = wp.new_record("w1", "afefehub")
+    local["reels"] = [{"review_id": "r1", "media_id": "m1"}]
+    remote = wp.new_record("w1", "afefehub")
+    remote["carousel"] = {"media_id": "car"}
+    remote["reels"] = [{"review_id": "r1", "media_id": "m1"}, {"review_id": "r2", "media_id": "m2"}]
+    merged = wp.merge_records(local, remote)
+    assert merged["carousel"] == {"media_id": "car"}
+    assert [r["review_id"] for r in merged["reels"]] == ["r1", "r2"]
+    jobs = _jobs(tmp_path, "r1", "r2", "r3")
+    assert wp.pending(merged, jobs) == (False, [jobs[2]])
+    # a fresh machine with no local file still sees what S3 recorded
+    assert wp.pending(wp.merge_records(wp.new_record("w1", "a"), remote), jobs)[1] == [jobs[2]]
 
 
 def test_new_record_reads_older_single_post_records():

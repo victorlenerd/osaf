@@ -32,7 +32,7 @@ reel-cover.jpg, reel-preview.png and caption.txt per review. Nothing leaves the 
 
 --publish needs IG_USER_ID and IG_ACCESS_TOKEN (root .env locally, SSM in prod). Each post is
 recorded in published.json (next to the output and in s3://<media bucket>/social/weekly/<window>/)
-as soon as it is live; a rerun skips whatever is already recorded there.
+as soon as it is live; a rerun skips whatever either copy records.
 """
 
 from __future__ import annotations
@@ -258,17 +258,14 @@ def render_reels(
     print(f"\nreels   one per review, whole recording (cut past {args.max_seconds:.0f} s)")
     with tempfile.TemporaryDirectory(dir=out) as tmp:
         for c in picks:
+            if args.audio_dir:
+                sources = au.local_sources(c, args.audio_dir)
+            elif args.from_fixture:
+                sources = iter(())
+            else:
+                sources = au.s3_sources(c, Path(tmp))
             try:
-                if args.audio_dir:
-                    src = au.local_audio(c, args.audio_dir)
-                elif args.from_fixture:
-                    src = None
-                else:
-                    src = au.fetch_audio(c, Path(tmp))
-                if src is None:
-                    print(f"  skip  {c.review_id:<28} no audio found: slide only", file=sys.stderr)
-                    continue
-                clip = au.make_clip(src, max_s=args.max_seconds)
+                src, clip = au.first_clip(c.review_id, sources, max_s=args.max_seconds)
             except au.ReviewAudioError as e:
                 print(f"  skip  {c.review_id:<28} {e}: slide only", file=sys.stderr)
                 continue
@@ -322,11 +319,16 @@ def publish(
     assume_yes: bool,
 ) -> int:
     """Publish the carousel, then each Reel; record each one as it lands."""
-    from app.social.weekly_publish import new_record, pending, publish_week
+    from app.social.weekly_publish import merge_records, new_record, pending, publish_week
     from app.store import s3
 
     rec_path = out / "published.json"
-    previous = json.loads(rec_path.read_text()) if rec_path.exists() else None
+    local = json.loads(rec_path.read_text()) if rec_path.exists() else None
+    try:  # the S3 copy is the durable one: a rerun from another machine must see it too
+        remote = s3.get_json_or_none(s3.Keys.social_record(run_id))
+    except Exception as e:  # noqa: BLE001
+        print(f"publish aborted: cannot read the S3 publish record: {e}", file=sys.stderr)
+        return 2
     try:
         client = client_from_settings(settings)
         me = client.me()
@@ -334,7 +336,10 @@ def publish(
     except InstagramPublishError as e:
         print(f"publish aborted: {e}", file=sys.stderr)
         return 2
-    record = new_record(run_id, me.get("username", ""), previous)
+    record = merge_records(
+        new_record(run_id, me.get("username", ""), local),
+        new_record(run_id, me.get("username", ""), remote),
+    )
     do_carousel, todo = pending(record, reels)
     if not do_carousel and not todo:
         print(f"\neverything for {run_id} is already published (see {rec_path})")
