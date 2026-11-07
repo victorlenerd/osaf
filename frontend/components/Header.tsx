@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Logo from "@/components/Logo";
+import { PAYOUTS_ENABLED } from "@/lib/constants";
 
 const NAV = [
   { href: "/", label: "Search" },
+  ...(PAYOUTS_ENABLED ? [{ href: "/payouts", label: "Payouts" }] : []),
   { href: "/about", label: "About" },
 ];
 

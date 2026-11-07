@@ -1,19 +1,7 @@
 import Link from "next/link";
-import { NGN_PER_POINT, PAYOUT_POOLS, POINTS, WEEKLY_REVIEW_LIMIT, WHATSAPP_NUMBER } from "@/lib/constants";
+import { NGN_PER_POINT, PAYOUT_POOLS, TIERS, WEEKLY_REVIEW_LIMIT, naira } from "@/lib/payouts";
+import { WHATSAPP_NUMBER } from "@/lib/constants";
 import WhatsAppIcon from "./WhatsAppIcon";
-
-const naira = (n: number) => `₦${n.toLocaleString("en-NG")}`;
-
-const TIERS: { points: number; title: string; detail: string; featured?: boolean }[] = [
-  { points: POINTS.voice, title: "Voice note", detail: "Talk us through your visit on WhatsApp." },
-  { points: POINTS.reelOther, title: "Someone else’s reel", detail: "We can still publish it, but it earns no points." },
-  {
-    points: POINTS.reelAuthor,
-    title: "Your own reel",
-    detail: "We send you a code; DM it to @afefehub from the account that posted it.",
-    featured: true,
-  },
-];
 
 const STEPS: { title: string; body: string }[] = [
   { title: "Publish a review", body: "Of any business in Nigeria, by voice note or Instagram reel." },
@@ -116,8 +104,8 @@ export default function PayoutRewardsCard() {
           )}
           <p className="text-xs muted">
             Same points for every opinion: a thank-you for taking part, never payment for what you say.{" "}
-            <Link href="/terms#rewards" className="underline">
-              Terms
+            <Link href="/payouts" className="underline">
+              How payouts work
             </Link>
           </p>
         </div>
