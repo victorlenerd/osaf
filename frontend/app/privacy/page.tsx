@@ -46,6 +46,12 @@ const sections: LegalSection[] = [
           <li>The messages you send us, including the reel link, any clarifications we ask for (for example, which of two similarly named businesses you meant), and the time of each message;</li>
           <li>Messages we send you, and delivery status.</li>
         </ul>
+        <h3>From people who ask us for recommendations, over WhatsApp</h3>
+        <ul>
+          <li>What you ask for (for example &ldquo;best suya in Lekki&rdquo;), the last few messages of that chat and the places we suggested, so that a follow-up such as &ldquo;tell me more about number 2&rdquo; makes sense;</li>
+          <li>If you choose to share a WhatsApp location pin, its coordinates, used only to find places near you;</li>
+          <li>A count of how many questions your number asked today, to keep the service fair for everyone.</li>
+        </ul>
         <h3>From your public Instagram reel</h3>
         <ul>
           <li>The video and its audio track, which we download and keep a working copy of;</li>
@@ -70,7 +76,8 @@ const sections: LegalSection[] = [
           <li>Your name, email address, role and the content of your message when you email us or send a takedown notice.</li>
         </ul>
         <p>
-          We do not collect payment information, government identifiers, or precise device location. We do not ask reviewers for their
+          We do not collect payment information or government identifiers, and we only receive a precise location if you share a location
+          pin with us on WhatsApp. We do not ask reviewers for their
           age, address or any information beyond the reel link, but what you say in the video is up to you.
         </p>
       </>
@@ -197,7 +204,7 @@ const sections: LegalSection[] = [
         <h3>Service providers (processors)</h3>
         <p>These companies process personal data on our behalf under contracts that restrict their use of it:</p>
         <ul>
-          <li><strong>Meta Platforms</strong>: the WhatsApp Business Cloud API carries your messages to us; Meta&rsquo;s model API runs the face check, transcription and extraction on video frames, audio and text we send it;</li>
+          <li><strong>Meta Platforms</strong>: the WhatsApp Business Cloud API carries your messages to us; Meta&rsquo;s model API runs the face check, transcription and extraction on video frames, audio and text we send it, and reads recommendation requests to pick places from our reviews;</li>
           <li><strong>Amazon Web Services</strong>: hosts our website, API, database, search index and stored media;</li>
           <li>
             <strong>Google</strong>: resolves business names to places through the Places API. We send the business name and area, not
@@ -267,6 +274,7 @@ const sections: LegalSection[] = [
           <li><strong>Our stored copy of your video and audio</strong> is kept while the review is published, so that we can re-run the pipeline when our models improve, and deleted within 30 days of withdrawal or removal;</li>
           <li><strong>Rejected or abandoned submissions</strong>, including any downloaded media, are deleted within 30 days;</li>
           <li><strong>WhatsApp conversations</strong> are kept for 12 months after the last message, so that we can handle follow-up questions and withdrawal requests from the same number, then deleted. We keep a hashed form of your phone number for a further 12 months only to enforce blocks for abuse;</li>
+          <li><strong>Recommendation chats and shared locations</strong> are only used for 30 minutes after your last message and are replaced by your next request; they are stored with your WhatsApp conversation and deleted with it, or straight away when you text <em>delete my data</em>. The daily question count is deleted after two days;</li>
           <li><strong>Aggregates</strong> such as a business&rsquo;s recommendation rate and AI summary may continue to reflect a withdrawn review&rsquo;s vote until the summary is next regenerated, which happens on the next review for that business or within 30 days, whichever is sooner. Aggregates do not identify you;</li>
           <li><strong>Server and access logs</strong> are kept for 90 days;</li>
           <li><strong>Emails, complaints and takedown notices</strong> are kept for 3 years after the matter is closed, to document how it was handled;</li>

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ulid import ULID
 
+from app.agent import discover
 from app.agent.extract import ExtractionOutcome, run_extraction_turn
 from app.agent.places import country_from_phone
 from app.config import get_settings
@@ -24,6 +25,7 @@ from app.models import (
     TERMINAL_STATES,
     TRANSIENT_STATES,
     Conversation,
+    SharedLocation,
     Submission,
     SubmissionState,
     now_iso,
@@ -46,7 +48,7 @@ from app.pipeline.voice import (
     transcode_for_playback,
     transcribe_voice_note,
 )
-from app.store import dynamo, s3
+from app.store import dynamo, opensearch, s3
 from app.whatsapp import client as wa
 
 log = logging.getLogger(__name__)
@@ -59,8 +61,11 @@ def help_text() -> str:
         "send me the link here. I'll watch it, find the business, and publish your review on "
         "afefehub.com so others can discover it.\n\nNo reel? Just send me a voice note about your "
         "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
-        f"the business name and area clearly.\n\nYou can publish up to {s.weekly_review_limit} "
-        f"reviews a week, and every published review earns {s.points_per_review} points. Text "
+        "the business name and area clearly.\n\nLooking for somewhere good? Just ask, e.g. "
+        "*best suya in Lekki* or *barber in Wuse 2*, or share your location 📍 and I'll "
+        "suggest places other customers recommend.\n\n"
+        f"You can publish up to {s.weekly_review_limit} reviews a week, and every published "
+        f"review earns {s.points_per_review} points. Text "
         "*points* anytime to see your total, or *delete my data* to erase everything I hold "
         "about you."
     )
@@ -68,6 +73,12 @@ def help_text() -> str:
 
 CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
+)
+# Greetings and help requests get the intro; any other free text is a vendor question.
+HELP_WORDS = re.compile(
+    r"^\s*(hi+|hello+|hey+|hiya|yo|good\s+(morning|afternoon|evening)|help|menu|start|info|"
+    r"how\s+does\s+(this|it)\s+work)\s*[?!.]*\s*$|^\s*[?!.]+\s*$",
+    re.I,
 )
 POINTS_WORDS = re.compile(r"^\s*(my\s+)?(points|balance|score)\s*[?!.]*\s*$", re.I)
 # "delete my data", "erase my reviews", "remove my account", "delete everything", "forget me"
@@ -258,6 +269,11 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         _run_pipeline(active, conv, skip_download=True)
         return
 
+    # 2b. a location pin: remembered for nearby searches; re-runs the last search near it
+    if mtype == "location":
+        _handle_location(conv, msg.get("location") or {}, active)
+        return
+
     # 3. a voice note: a short, prompt answer while we wait on the reviewer, otherwise a
     #    voice-only review (a long note, or one sent hours after the question, is a new review
     #    even if an old submission is still waiting; otherwise it would be published under
@@ -308,7 +324,12 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             _start_voice_review(conv, voice_id)
             return
 
-    # 4. answers while a submission waits on the user
+    # 4. answers while a submission waits on the user. A typed message that asks for vendors
+    #    instead ("any good barber in Yaba?") is answered as a search and leaves the review
+    #    exactly where it was.
+    if active and text and not spoken and _wants_vendors(active, text):
+        _discover(conv, text, footer=_discovery_footer(active))
+        return
     if active and text:
         if active.state == SubmissionState.AWAITING_CLARIFICATION:
             active.qa_log.append(QA(q=active.pending_question or "", a=_as_logged(text, spoken)))
@@ -358,12 +379,120 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             if _is_stale(active):
                 wa.send_text(phone, "That one got stuck, resuming now…")
                 _run_pipeline(active, conv, skip_download=active.s3_video_key is not None)
+            elif mtype == "text" and not HELP_WORDS.match(text):
+                _discover(conv, text, footer=_discovery_footer(active))
             else:
                 wa.send_text(phone, "Still working on your last review, one moment… ⏳")
             return
 
-    # 5. anything else
+    # 5. a question for vendors, or the intro for greetings and anything else
+    if mtype == "text" and text.strip() and not HELP_WORDS.match(text):
+        _discover(conv, text)
+        return
     wa.send_text(phone, help_text())
+
+
+# ---------------------------------------------------------------- vendor discovery
+DISCOVERY_LIMIT_MSG = (
+    "You've asked me a lot today 🙏 I can look up more places for you tomorrow. Meanwhile you "
+    "can search on {site}."
+)
+WAITING_FOOTER = "\n\n(Your review is still waiting for your reply to my last question about it 🙂)"
+PROCESSING_FOOTER = "\n\n(I'm still working on your review and will message you when it's ready ⏳)"
+
+
+def _discovery_footer(active: Submission | None) -> str | None:
+    if active is None:
+        return None
+    if active.state in TRANSIENT_STATES:
+        return PROCESSING_FOOTER
+    if active.state in (
+        SubmissionState.AWAITING_CLARIFICATION,
+        SubmissionState.CONFIRMING,
+        SubmissionState.AWAITING_VIDEO,
+    ):
+        return WAITING_FOOTER
+    return None
+
+
+def _wants_vendors(active: Submission, text: str) -> bool:
+    """While a review waits on the reviewer, is this typed message a vendor question rather
+    than the answer? Obvious answers never reach the model; any doubt keeps the old reading."""
+    if active.state in (SubmissionState.AWAITING_CLARIFICATION, SubmissionState.CONFIRMING):
+        if CONFIRM_WORDS.match(text) or discover.obviously_an_answer(text):
+            return False
+        return discover.classify_intent(text, active.pending_question) == "discover"
+    if active.state == SubmissionState.AWAITING_VIDEO:
+        # Nothing typed answers "send the video file", so only greetings get the nudge.
+        if HELP_WORDS.match(text) or CONFIRM_WORDS.match(text):
+            return False
+        return (
+            discover.classify_intent(text, "Please send the video file of your reel.") == "discover"
+        )
+    return False
+
+
+def _discover(
+    conv: Conversation,
+    text: str,
+    *,
+    footer: str | None = None,
+    remember_as: str | None = None,
+) -> None:
+    """Answer a vendor question and remember the chat on the conversation. `remember_as` is the
+    request to keep for a later location re-run when `text` is a wrapper around it."""
+    phone = conv.phone
+    if not _models_ready():
+        # No agent without the model key: a plain search still beats the intro text.
+        try:
+            hits = opensearch.search(remember_as or text, country=conv.profile_country, limit=3)
+        except Exception:  # noqa: BLE001
+            log.exception("discovery fallback search failed")
+            hits = []
+        wa.send_text(phone, discover.format_results(hits) + (footer or ""))
+        return
+    if dynamo.incr_discovery_count(phone) > get_settings().discovery_daily_limit:
+        site = get_settings().public_site_url.removeprefix("https://")
+        wa.send_text(phone, DISCOVERY_LIMIT_MSG.format(site=site) + (footer or ""))
+        return
+    outcome = discover.run_discovery_turn(conv, text, remember_as=remember_as)
+    log.info(
+        "discovery for %s: steps=%s searched=%s options=%d",
+        phone_label(phone),
+        [t["tool_calls"] for t in outcome.trace],
+        outcome.searched,
+        len(outcome.session.shown),
+    )
+    conv.discovery = outcome.session
+    dynamo.put_conversation(conv)
+    wa.send_text(phone, outcome.message + (footer or ""), preview_url=False)
+
+
+def _handle_location(conv: Conversation, loc: dict, active: Submission | None) -> None:
+    try:
+        lat, lng = float(loc["latitude"]), float(loc["longitude"])
+    except (KeyError, TypeError, ValueError):
+        wa.send_text(conv.phone, "I couldn't read that location. Could you share it again?")
+        return
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        wa.send_text(conv.phone, "I couldn't read that location. Could you share it again?")
+        return
+    conv.last_location = SharedLocation(lat=lat, lng=lng)
+    dynamo.put_conversation(conv)
+    session = discover.live_session(conv)
+    if session and session.last_query:
+        _discover(
+            conv,
+            f"I just shared my location. Same request, near me: {session.last_query}",
+            footer=_discovery_footer(active),
+            remember_as=session.last_query,
+        )
+        return
+    wa.send_text(
+        conv.phone,
+        "Got your location 📍 What are you looking for nearby? e.g. *suya*, *barber*, "
+        "*pharmacy*, *phone repair*",
+    )
 
 
 # ----------------------------------------------------------------- erasure

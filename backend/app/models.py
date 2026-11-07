@@ -222,6 +222,35 @@ class Submission(BaseModel):
     expires_at: int | None = None
 
 
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str
+
+
+class ShownVendor(BaseModel):
+    """One numbered option the discovery agent showed, so "number 2" resolves next turn."""
+
+    n: int
+    id: str  # an Afefehub business_id, or a Google place_id when source == "google"
+    name: str
+    source: Literal["afefehub", "google"] = "afefehub"
+
+
+class DiscoverySession(BaseModel):
+    """Short-lived memory of a vendor search chat; stale after discovery_session_seconds."""
+
+    turns: list[ChatTurn] = Field(default_factory=list)
+    shown: list[ShownVendor] = Field(default_factory=list)
+    last_query: str | None = None
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class SharedLocation(BaseModel):
+    lat: float
+    lng: float
+    at: str = Field(default_factory=now_iso)
+
+
 class Conversation(BaseModel):
     phone: str
     active_submission_id: str | None = None
@@ -238,6 +267,10 @@ class Conversation(BaseModel):
     # number's reviews are gone. Written before the first review is deleted so a retry after
     # a failed run still knows which businesses it touched.
     erasure_businesses: list[str] = Field(default_factory=list)
+    # Vendor discovery chat ("where can I get suya in Lekki?") and the last location pin the
+    # person shared. Both live here so *delete my data* takes them with the conversation.
+    discovery: DiscoverySession | None = None
+    last_location: SharedLocation | None = None
     updated_at: str = Field(default_factory=now_iso)
     # DynamoDB TTL: conversations are kept 12 months after the last message (privacy policy).
     expires_at: int | None = None
