@@ -11,6 +11,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
+      # ffmpeg and fpcalc (Chromaprint) run the real-media fingerprint tests.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libchromaprint-tools
       - run: pip install -e ".[dev]"
       - run: ruff check app tests scripts && ruff format --check app tests scripts
       - run: pytest -q

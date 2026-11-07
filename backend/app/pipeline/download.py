@@ -6,7 +6,8 @@ import base64
 import logging
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yt_dlp
@@ -39,12 +40,41 @@ def extract_reel(text: str) -> tuple[str, str] | None:
 
 
 @dataclass
+class ReelMeta:
+    """What yt-dlp tells us about a reel beyond the file: who posted it, when, and its public
+    engagement counts at the time of the request."""
+
+    username: str | None = None  # the Instagram handle ("channel" in yt-dlp)
+    uploader_id: str | None = None  # numeric account id
+    posted_at: str | None = None  # ISO Z
+    like_count: int | None = None
+    comment_count: int | None = None
+    view_count: int | None = None
+
+    @classmethod
+    def from_info(cls, info: dict | None) -> ReelMeta:
+        info = info or {}
+        ts = info.get("timestamp")
+        posted = datetime.fromtimestamp(int(ts), UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if ts else None
+        username = info.get("channel")
+        return cls(
+            username=username.lower() if isinstance(username, str) and username else None,
+            uploader_id=str(info["uploader_id"]) if info.get("uploader_id") else None,
+            posted_at=posted,
+            like_count=info.get("like_count"),
+            comment_count=info.get("comment_count"),
+            view_count=info.get("view_count"),
+        )
+
+
+@dataclass
 class DownloadResult:
     video_path: Path
     audio_path: Path
     duration_s: float | None
     title: str | None
     uploader: str | None
+    meta: ReelMeta = field(default_factory=ReelMeta)
 
 
 def _cookie_file(work: Path) -> Path | None:
@@ -121,7 +151,24 @@ def download_reel(url: str, work: Path) -> DownloadResult:
         duration_s=(info or {}).get("duration"),
         title=(info or {}).get("title"),
         uploader=(info or {}).get("uploader"),
+        meta=ReelMeta.from_info(info),
     )
+
+
+def reel_metadata(url: str, work: Path) -> ReelMeta:
+    """Fresh metadata (engagement counts) for a reel without downloading it. Raises
+    DownloadError like download_reel when Instagram refuses."""
+    work.mkdir(parents=True, exist_ok=True)
+    opts: dict = {"quiet": True, "no_warnings": True, "noplaylist": True, "cachedir": False}
+    cookies = _cookie_file(work)
+    if cookies:
+        opts["cookiefile"] = str(cookies)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except yt_dlp.utils.DownloadError as e:
+        raise DownloadError(f"Could not read the reel: {str(e)[:200]}") from e
+    return ReelMeta.from_info(info)
 
 
 def extract_audio(video: Path, audio: Path, sample_rate: int = 24000) -> Path:

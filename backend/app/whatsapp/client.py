@@ -70,6 +70,42 @@ def send_text(to: str, body: str, *, preview_url: bool = True) -> None:
         log.error("send_text failed %s: %s", r.status_code, r.text[:300])
 
 
+def send_template(
+    to: str, name: str, body_params: list[str], *, language: str | None = None
+) -> str | None:
+    """Send an approved message template (the only kind WhatsApp allows outside the 24 h
+    service window). Returns the message id, or None when it was not sent."""
+    s = get_settings()
+    if not s.whatsapp_access_token:
+        log.info("[dry-run] template %s -> %s", name, phone_label(to))
+        return None
+    r = httpx.post(
+        f"{_base()}/{_sender_id()}/messages",
+        headers=_headers(),
+        json={
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": name,
+                "language": {"code": language or s.wa_template_language},
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": [{"type": "text", "text": p} for p in body_params],
+                    }
+                ],
+            },
+        },
+        timeout=20,
+    )
+    if r.status_code >= 400:
+        log.error("send_template %s failed %s: %s", name, r.status_code, r.text[:300])
+        return None
+    messages = r.json().get("messages") or [{}]
+    return messages[0].get("id")
+
+
 def mark_read(message_id: str) -> None:
     s = get_settings()
     if not s.whatsapp_access_token:

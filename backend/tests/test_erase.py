@@ -161,7 +161,7 @@ def _world(monkeypatch):
 def test_preview_counts(monkeypatch):
     _world(monkeypatch)
     p = erase.preview(ADA)
-    assert (p.reviews, p.submissions, p.points) == (2, 3, 20)
+    assert (p.reviews, p.submissions, p.entries) == (2, 3, 0)
 
 
 def test_erasure_removes_everything_of_one_reviewer_only(monkeypatch):
@@ -178,11 +178,13 @@ def test_erasure_removes_everything_of_one_reviewer_only(monkeypatch):
     # each submission folder removed exactly once (published ones are listed twice)
     assert sorted(s3.prefixes) == [
         "businesses/solo/summary_history/",
+        "reviews/a1/",
+        "reviews/a2/",
         "submissions/sub-a1/",
         "submissions/sub-a2/",
         "submissions/sub-a3/",
     ]
-    assert report.objects == 3 * 4
+    assert report.objects == 3 * 6
     # the shared business is rebuilt from Bob's review without the old summary; solo is gone
     assert report.businesses_rebuilt == ["shared"] and report.businesses_removed == ["solo"]
     assert db.summaries["shared"].review_count == 1 and db.summaries["shared"].headline == ""

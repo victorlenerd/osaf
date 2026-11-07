@@ -8,10 +8,14 @@ What goes, in order:
   3. each affected business is rebuilt from the reviews that remain: counters recomputed,
      summary regenerated, search document reindexed; a business left with no review is
      removed entirely, together with its summary history;
-  4. the conversation record and the points balance.
+  4. payouts: open offers, unpaid entries, bank details, author-verification codes and the
+     Instagram accounts verified to the number. Paid entries are kept as a payment record
+     with the number stripped (only the keyed hash remains);
+  5. the conversation record and the legacy points balance.
 
 Only a dated, keyed-hash receipt (no number) is kept, so a later question "was my data
-deleted?" can be answered. The privacy policy allows keeping the hash for 12 months.
+deleted?" can be answered. The privacy policy allows keeping the hash for 12 months. A ban
+(BAN#<hash>) is not erased: it holds no number and stops a banned person coming straight back.
 """
 
 from __future__ import annotations
@@ -23,9 +27,12 @@ from dataclasses import dataclass, field
 from ulid import ULID
 
 from app.agent.summary import generate_summary
+from app.fingerprint import index as fpindex
 from app.models import now_iso
 from app.pii import phone_hash, phone_label
 from app.store import dynamo, opensearch, s3
+from app.store import rewards_store as rstore
+from app.store.s3 import Keys
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +49,8 @@ class ErasureReport:
     businesses_removed: list[str] = field(default_factory=list)
     businesses_failed: list[str] = field(default_factory=list)  # rebuild raised; see errors
     points_forfeited: int = 0
+    payout_items: int = 0  # offers, unpaid entries, bank details, codes, Instagram links
+    paid_entries_kept: int = 0
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -53,15 +62,16 @@ class ErasureReport:
 class ErasurePreview:
     reviews: int
     submissions: int
-    points: int
+    entries: int = 0  # payout entries not yet paid
 
 
 def preview(phone: str) -> ErasurePreview:
     """What an erasure would remove, for the confirmation message and the dry run."""
+    h = phone_hash(phone)
     return ErasurePreview(
-        reviews=len(dynamo.list_all_reviews_by_reviewer(phone_hash(phone))),
+        reviews=len(dynamo.list_all_reviews_by_reviewer(h)),
         submissions=len(dynamo.list_all_submissions_for_phone(phone)),
-        points=dynamo.get_points(phone),
+        entries=sum(1 for e in rstore.list_entries(h) if e.status != "paid"),
     )
 
 
@@ -94,8 +104,18 @@ def erase_reviewer(phone: str) -> ErasureReport:
     for review in reviews:
         dynamo.delete_review(review)
         _delete_folder(report, review.submission_id, folders)
+        try:
+            report.objects += s3.delete_prefix(Keys.review_prefix(review.review_id))
+        except Exception as e:  # noqa: BLE001
+            report.errors.append(f"s3 reviews/{review.review_id}/: {e!r}")
+        try:
+            fpindex.delete(review.review_id)
+        except Exception as e:  # noqa: BLE001
+            report.errors.append(f"fingerprint {review.review_id}: {e!r}")
         if review.reel_shortcode:
             dynamo.delete_reel_claim(review.reel_shortcode)
+        if review.media_sha256:
+            rstore.delete_media_claim(review.media_sha256)
         report.reviews += 1
 
     # 2. the rest of the submissions (rejected, abandoned, waiting, or published long ago)
@@ -109,7 +129,10 @@ def erase_reviewer(phone: str) -> ErasureReport:
     # 3. businesses: rebuild from what remains, or remove when nothing does
     rebuild_businesses(list(touched), report)
 
-    # 4. the number itself
+    # 4. payouts
+    _erase_payouts(phone, report)
+
+    # 5. the number itself
     dynamo.delete_conversation(phone)
 
     _write_receipt(phone, report)
@@ -123,6 +146,23 @@ def erase_reviewer(phone: str) -> ErasureReport:
         len(report.businesses_removed),
     )
     return report
+
+
+def _erase_payouts(phone: str, report: ErasureReport) -> None:
+    h = phone_hash(phone)
+    for entry in rstore.list_entries(h):
+        if entry.ig_code:
+            rstore.delete_ig_code(entry.ig_code)
+        if entry.status == "paid":
+            entry.phone = None  # a payment record: amount, window, hash; never the number
+            entry.ig_code = None
+            rstore.put_entry(entry)
+            report.paid_entries_kept += 1
+    for username in rstore.list_ig_links(h):
+        rstore.delete_ig_link(username)
+    report.payout_items += rstore.delete_rewards_partition(
+        h, keep=lambda item: item["SK"].startswith("ENTRY#") and item.get("status") == "paid"
+    )
 
 
 def rebuild_businesses(
@@ -154,7 +194,14 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
             report.errors.append(f"s3 businesses/{business_id}/: {e!r}")
         report.businesses_removed.append(business_id)
         return
-    reviews = dynamo.list_reviews(business_id)
+    reviews = [r for r in dynamo.list_reviews(business_id) if r.status == "published"]
+    if not reviews:
+        # Only hidden reviews are left (a ban): keep them, but take the business off search
+        # and drop its summary, which paraphrases those reviews and the page would still show.
+        dynamo.delete_summary(business_id)
+        opensearch.delete_business(business_id)
+        report.businesses_rebuilt.append(business_id)
+        return
     # No `previous`: the old summary may paraphrase the review that was just removed.
     summary = generate_summary(business, reviews, None)
     dynamo.put_summary(business_id, summary)
@@ -174,6 +221,8 @@ def _write_receipt(phone: str, report: ErasureReport) -> None:
                 "reviews": report.reviews,
                 "submissions": report.submissions,
                 "objects": report.objects,
+                "payout_items": report.payout_items,
+                "paid_entries_kept": report.paid_entries_kept,
                 "businesses_rebuilt": report.businesses_rebuilt,
                 "businesses_removed": report.businesses_removed,
                 "businesses_failed": report.businesses_failed,

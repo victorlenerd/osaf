@@ -78,9 +78,14 @@ export interface Review {
   reel_shortcode: string | null;
   /** Absolute URL that redirects to the audio file (m4a). null for reel reviews or when audio is unavailable. */
   audio_url: string | null;
+  /** The credited reviewer's WhatsApp name. null for a reel credited to its Instagram poster. */
   reviewer_display_name: string | null;
-  /** ISO-3166 alpha-2 derived from the reviewer's WhatsApp dialing code; null when unknown. */
+  /** ISO-3166 alpha-2 derived from the credited reviewer's WhatsApp dialing code; null when unknown or when the reel is credited to its poster. */
   reviewer_country: string | null;
+  /** Instagram username of the account that posted the reel (no "@"); null for voice notes and older reels. */
+  reel_author: string | null;
+  /** First name of the person who sent us someone else's reel; null when the reel is theirs (or a voice note). */
+  shared_by: string | null;
   extraction: Extraction;
 }
 

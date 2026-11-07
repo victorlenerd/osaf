@@ -117,6 +117,7 @@ variable "secret_names" {
     "PHONE_HASH_SALT",
     "IG_USER_ID",
     "IG_ACCESS_TOKEN",
+    "IG_VERIFY_TOKEN",
   ]
 }
 

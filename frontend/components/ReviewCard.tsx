@@ -31,8 +31,13 @@ export default function ReviewCard({ review }: { review: Review }) {
   const anonymous = isVoice ? "a voice reviewer" : "an Instagram reviewer";
   const flag = flagEmoji(review.reviewer_country);
   const country = review.reviewer_country ? countryName(review.reviewer_country) : "";
+  // A reel is credited to the Instagram account that posted it; the sender's name is shown with it
+  // only once they have proven the reel is theirs, otherwise as the person who shared it.
+  const handle = review.reel_author;
+  const name = review.reviewer_display_name;
+  const creditText = handle ? (name ? `${name} (@${handle})` : `@${handle}`) : (name ?? reviewerKind);
   return (
-    <article className="card overflow-hidden" aria-label={`Review by ${review.reviewer_display_name ?? anonymous}`}>
+    <article className="card overflow-hidden" aria-label={`Review by ${handle || name ? creditText : anonymous}`}>
       <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_320px]">
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
@@ -48,7 +53,23 @@ export default function ReviewCard({ review }: { review: Review }) {
                 {flag}
               </span>
             )}
-            {review.reviewer_display_name ?? reviewerKind} · {formatDate(review.created_at)}
+            {handle ? (
+              <>
+                {name && `${name} `}
+                <a
+                  href={`https://www.instagram.com/${encodeURIComponent(handle)}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium underline-offset-2 hover:underline"
+                >
+                  {name ? `(@${handle})` : `@${handle}`}
+                </a>
+                {review.shared_by && ` · shared by ${review.shared_by}`}
+              </>
+            ) : (
+              creditText
+            )}{" "}
+            · {formatDate(review.created_at)}
             {visitBits.length > 0 && (
               <>
                 {" "}· visited {visitBits.join(", ")}

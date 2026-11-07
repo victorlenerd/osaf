@@ -34,7 +34,7 @@ Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/gl
 3. Ask the same number for a recommendation, e.g. *best suya in Lekki* or *barber in Wuse 2*, or
    share a location pin. The agent searches Afefehub's reviewed businesses and answers with a
    numbered shortlist and links; *tell me more about 2* gets what reviewers said about that one.
-4. Text **points** to the same number to see your reviewer balance, or **delete my data** to erase
+4. Text **points** to the same number to see your payout entries, or **delete my data** to erase
    everything Afefehub holds about you (confirm with **DELETE**; it is gone within a minute).
 
 The public API needs no key:
@@ -80,8 +80,8 @@ unstructured speech into a searchable record that works for businesses Google ha
 | **Search** | Typeahead over business names *and the names reviewers actually said*, keywords, address and city, with fuzzy matching and a boost for well-reviewed, well-recommended businesses. Filter by 13 countries and 20 categories. |
 | **Ask on WhatsApp** | The number that takes reviews also recommends places. "Where can I get good suya in Lekki?" gets up to three reviewed businesses with their recommend rate, headline and link; a location pin narrows it to places nearby; follow-ups like "tell me more about 2" answer from what reviewers said. When Afefehub has nothing yet it offers Google listings, marked as unreviewed, and invites the person to review one. |
 | **Google fallback** | Empty result? One tap checks Google Places and shows the listing with an AI summary of up to five live Google reviews (attributed, never stored). |
-| **Reviewer rewards** | 10 points per published review, glowing or grumpy; 100 points earns a US$10 Amazon gift card. Capped at 3 reviews per reviewer per rolling week. A thank-you, never payment for a particular opinion. |
-| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag, and a how-to-submit closer. Each review in it then gets a Reel of its own that plays the reviewer's whole recording under their review card, with a waveform that fills in as it plays. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
+| **Reviewer payouts (Nigeria)** | Monthly cash payouts for reviews of Nigerian businesses: 5 pts per voice note, 10 pts per reel from its verified author (a reel someone else posted earns nothing) (the reviewer DMs a WhatsApp-issued code to @afefehub on Instagram from the posting account). After publishing, the agent asks whether to enter the review; only reviews entered with **ENTER** earn points, and only if they pass eligibility (Nigerian business, not a duplicate or near-duplicate by audio, video and transcript fingerprints, face check passed for reels, 3 reviews a week, reviewer not banned). 1 pt = up to ₦1,000 from monthly category pools (Shortlets, Restaurants and Hotels ₦1,000,000 each, everything else ₦500,000), paid pro rata when a pool is oversubscribed. A person reviews every entry before payment; payment is a bank transfer to a Nigerian account, or an Amazon gift card on request. Same points for every opinion. |
+| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag (a reel the sender did not post is credited to its Instagram handle instead), and a how-to-submit closer. Each review in it then gets a Reel of its own that plays the reviewer's whole recording under their review card, with a waveform that fills in as it plays. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
 
 <p align="center">
   <img src="docs/images/business.png" alt="Business page with the AI summary, recommend meter and reel and voice reviews" width="48%">
@@ -210,8 +210,8 @@ environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md
 
 **Who it serves**
 
-- **Reviewers** get a home for the reviews they already film, in their own language, with points
-  towards a gift card and a country flag on every review.
+- **Reviewers** get a home for the reviews they already film, in their own language, with a country
+  flag on every review and, in Nigeria, monthly cash payouts for the reviews they enter.
 - **Businesses**, including ones with no Google listing, get a public page with verified video and
   voice reviews and a summary that tells them exactly what customers praise and complain about.
 - **Customers** get reviews they can look in the eye instead of anonymous stars.
@@ -225,8 +225,11 @@ environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md
    informal merchants.
 4. Concierge onboarding for business associations and markets that want their traders listed.
 
-**Integrity rules.** Same points for every opinion, positive or negative. The gift card is a
-thank-you, never payment for a particular review. Reviews are public reels or voice notes; nothing
+**Integrity rules.** Same points for every opinion, positive or negative: points depend only on the
+kind of review (voice note or your own verified reel), never on what it says.
+Payouts are a thank-you for taking part, never payment for a particular review. Duplicates and
+near-duplicates earn nothing, a person checks every entry before anyone is paid, and spam or abuse
+gets a reviewer banned with unpaid points forfeited. Reviews are public reels or voice notes; nothing
 is typed in. The terms, privacy policy and operator (1CTECH, Ontario, Canada) are published on the
 site.
 

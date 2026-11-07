@@ -6,7 +6,7 @@ import { LEGAL } from "@/lib/legal";
 
 export const metadata: Metadata = {
   title: "Delete your data",
-  description: `How to delete everything ${LEGAL.brand} holds about you: your reviews, videos, voice notes, transcripts, chat history and points. Self-service from WhatsApp, or by email.`,
+  description: `How to delete everything ${LEGAL.brand} holds about you: your reviews, videos, voice notes, transcripts, chat history, payout entries and bank details. Self-service from WhatsApp, or by email.`,
 };
 
 const B = LEGAL.brand;
@@ -16,16 +16,18 @@ const WINDOW_MINUTES = 10;
 
 const DELETED: { what: string; detail: string }[] = [
   { what: "Your published reviews", detail: "Every review you submitted is removed from the business pages and from search right away." },
-  { what: "Videos, voice notes and transcripts", detail: "Our stored copies of your reels, voice notes, audio, transcripts and the AI agent's working notes." },
+  { what: "Videos, voice notes and transcripts", detail: "Our stored copies of your reels, voice notes, audio, transcripts and the AI agent's working notes, and the fingerprints we use to spot duplicates." },
   { what: "Submissions in progress", detail: "Anything you sent that was still being processed, was rejected, or was abandoned." },
   { what: "Your WhatsApp conversation", detail: "The record of your chats with the Afefehub number, including your WhatsApp profile name and country." },
-  { what: "Your points", detail: "Your reviewer points balance. Points cannot be restored after deletion." },
+  { what: "Your payout entries and points", detail: "Every entry not yet paid, with its points. Unpaid points are forfeited and cannot be restored after deletion." },
+  { what: "Your bank details", detail: "The bank name, account number and account name you gave us for payouts, or your choice of a gift card." },
+  { what: "Your Instagram verification", detail: "Any pending verification code, and the link between your verified Instagram account and your number." },
 ];
 
 const STEPS: { title: string; body: string }[] = [
   {
     title: `Message “${DELETE_COMMAND}” to the ${B} number`,
-    body: "Send it from the same WhatsApp number you used to submit your reviews. We reply with exactly what will be deleted: how many reviews, how many points, and what else we hold.",
+    body: "Send it from the same WhatsApp number you used to submit your reviews. We reply with exactly what will be deleted: how many reviews, how many payout entries, and what else we hold.",
   },
   {
     title: `Reply ${CONFIRM_WORD}, in capitals`,
@@ -123,9 +125,17 @@ export default function DataDeletionPage() {
         </h2>
         <ul className="legal-section mt-4 space-y-2 text-[15px] leading-relaxed">
           <li>
-            <strong>Nothing that identifies you.</strong> Your phone number is removed from every record. We keep only a dated
+            <strong>Nothing that identifies you.</strong> Your phone number is removed from every record. We keep a dated
             receipt of the deletion under your reference number, containing a keyed one-way hash of the number and the
             counts of what was removed, for 12 months, so we can prove the request was honoured.
+          </li>
+          <li>
+            <strong>Payments already made.</strong> If we have already paid you, we keep the record of each payment (the amount,
+            the date and the reviews it covered) for accounting, with your phone number removed. Your bank details are not kept.
+          </li>
+          <li>
+            <strong>Bans.</strong> If your number was banned from the payout programme for spam or abuse, we keep a one-way hash
+            of it so the ban still applies. It is used only for fraud prevention.
           </li>
           <li>
             <strong>Backups</strong> are overwritten on a 35-day cycle. Deleted data disappears from them on that schedule and is

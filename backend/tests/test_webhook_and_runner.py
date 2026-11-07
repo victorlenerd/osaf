@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.models import QA, Conversation, Review, Submission, SubmissionState, Transcript
+from app.pii import phone_hash
 from app.pipeline import runner
 
 
@@ -366,13 +367,12 @@ def test_voice_note_refused_at_limit(voice):
     assert "next slot" in sent[0][1]
 
 
-def test_points_command_reports_balance_and_slots(world):
+def test_points_command_reports_entries_and_slots(world):
     store, sent, events = world
-    store.points[PHONE] = 30
     _published_review(store, PHONE, 1)
     for word in ("Points?", "my points", "balance", "SCORE"):
         runner.process_inbound(PHONE, _text(word), "Ada")
-        assert "30 points" in sent[-1][1] and "2 review slots" in sent[-1][1]
+        assert "payout" in sent[-1][1] and "2 review slots" in sent[-1][1]
     runner.process_inbound(PHONE, _text("I have points"), "Ada")
     assert "Afefehub" in sent[-1][1] and not events
 
@@ -396,7 +396,7 @@ def test_points_command_does_not_consume_clarification(world):
 def test_help_mentions_limit_and_points(world):
     store, sent, events = world
     runner.process_inbound(PHONE, _text("hello"), "Ada")
-    assert "3 reviews a week" in sent[0][1] and "10 points" in sent[0][1]
+    assert "3 reviews a week" in sent[0][1] and "5 pts for a voice note" in sent[0][1]
 
 
 def test_quota_math_and_humanize(monkeypatch):
@@ -747,7 +747,7 @@ def test_voice_pipeline_skips_face_check(world, monkeypatch, tmp_path):
     assert events == ["extract"]
 
 
-def test_publish_voice_review_skips_reel_claim(monkeypatch):
+def test_publish_voice_review_skips_reel_claim(monkeypatch, rewards_db):
     from app.models import PlaceRef, ReviewExtraction
     from app.pipeline import publish
 
@@ -765,10 +765,10 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
     monkeypatch.setattr(publish.dynamo, "put_summary", lambda bid, s: None)
     monkeypatch.setattr(publish, "generate_summary", lambda b, r, p: BusinessSummary())
     monkeypatch.setattr(publish.s3, "put_json", lambda o, k: k)
+    monkeypatch.setattr(publish.s3, "copy", lambda src, dst: dst)
     monkeypatch.setattr(publish.opensearch, "upsert_business", lambda b, s: None)
-    awarded: list[tuple[str, int]] = []
     monkeypatch.setattr(
-        publish.dynamo, "add_points", lambda phone, n: awarded.append((phone, n)) or 40
+        publish.dynamo, "add_points", lambda *a: pytest.fail("publishing no longer awards points")
     )
     monkeypatch.setattr(publish.dynamo, "list_reviews_by_reviewer_since", lambda *a, **k: [])
     sent: list[str] = []
@@ -785,11 +785,13 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
     review = publish.publish_submission(sub, Conversation(phone=phone))
     assert review is saved["review"]
     assert review.source == "voice" and review.reel_url is None
-    assert review.audio_s3_key == "submissions/v1/voice.m4a"
+    # the playable audio is retained under reviews/<id>/ (submissions/ expires after 30 days)
+    assert review.audio_s3_key == f"reviews/{review.review_id}/voice.m4a"
     assert review.reviewer_country == "KE"
     assert sub.state == SubmissionState.PUBLISHED
-    assert awarded == [(phone, 10)]
-    assert "+10 points" in sent[0] and "you now have 40" in sent[0]
+    # a review of a Nigerian business is offered for the payout, whoever reviews it
+    assert "Reply *ENTER*" in sent[0] and "5 pts" in sent[0]
+    assert rewards_db.offers[(phone_hash(phone), review.review_id)].phone == phone
 
 
 def test_review_audio_endpoint(monkeypatch):
@@ -860,7 +862,7 @@ def eraser(world, monkeypatch):
     from app.pipeline import erase
 
     erased: list[str] = []
-    preview = erase.ErasurePreview(reviews=2, submissions=3, points=20)
+    preview = erase.ErasurePreview(reviews=2, submissions=3, entries=2)
     monkeypatch.setattr(runner.erase, "preview", lambda phone: preview)
 
     def fake_erase(phone):
@@ -877,7 +879,7 @@ def test_delete_request_asks_for_confirmation(eraser):
         runner.process_inbound(PHONE, _text(phrase), "Ada")
         body = sent[-1][1]
         assert "2 published reviews" in body and "1 other submission" in body
-        assert "20 points" in body
+        assert "your 2 payout entries" in body and "bank details" in body
         assert "Reply *DELETE*" in body
     assert store.convs[PHONE].deletion_requested_at and not erased and not events
 
@@ -1111,6 +1113,93 @@ def test_help_mentions_deletion(world):
     store, sent, events = world
     runner.process_inbound(PHONE, _text("hi"), "Ada")
     assert "delete my data" in sent[0][1]
+
+
+# ------------------------------------------------------------------- payouts and bans
+def test_banned_number_is_told_once_a_day_and_nothing_runs(world, rewards_db):
+    from app.moderation import bans
+
+    store, sent, events = world
+    bans.ban(phone_hash(PHONE), "spam")
+    runner.process_inbound(PHONE, _text("https://www.instagram.com/reel/abc/"), "Ada")
+    runner.process_inbound(PHONE, _text("hello"), "Ada")
+    assert not events and len(sent) == 1 and "can no longer submit" in sent[0][1]
+
+
+def test_banned_number_can_still_erase(eraser, rewards_db):
+    from app.moderation import bans
+
+    store, sent, events, erased = eraser
+    bans.ban(phone_hash(PHONE), "abuse")
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert erased == [PHONE]
+
+
+def test_payout_commands_route_even_mid_review(world, monkeypatch):
+    store, sent, events = world
+    called: list[str] = []
+    monkeypatch.setattr(runner.rewards, "handle_enter", lambda c: called.append("enter"))
+    monkeypatch.setattr(runner.rewards, "handle_verify", lambda c: called.append("verify"))
+    monkeypatch.setattr(runner.rewards, "ask_payout_details", lambda c: called.append("details"))
+    store.subs["s1"] = Submission(
+        submission_id="s1", phone=PHONE, reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION, pending_question="Which Yaba?",
+    )  # fmt: skip
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    for word in ("ENTER", "verify", "bank details", "change bank"):
+        runner.process_inbound(PHONE, _text(word), "Ada")
+    assert called == ["enter", "verify", "details", "details"]
+    assert store.subs["s1"].qa_log == [] and not events
+
+
+def test_bank_details_answer_is_not_a_clarification(world, rewards_db):
+    store, sent, events = world
+    conv = Conversation(phone=PHONE, active_submission_id="s1")
+    conv.payout_details_requested_at = conv.updated_at
+    store.convs[PHONE] = conv
+    store.subs["s1"] = Submission(
+        submission_id="s1", phone=PHONE, reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION, pending_question="Which Yaba?",
+    )  # fmt: skip
+    runner.process_inbound(PHONE, _text("Kuda, 2012345678, Ada Obi"), "Ada")
+    assert rewards_db.payees[phone_hash(PHONE)].bank_name == "Kuda"
+    assert store.subs["s1"].qa_log == [] and not events
+
+
+def test_duplicate_media_is_rejected_before_transcription(world, monkeypatch, tmp_path):
+    from app.fingerprint import check as fpcheck
+    from app.models import SimilarityMatch
+
+    store, sent, events = world
+    monkeypatch.undo()
+    monkeypatch.setattr(runner, "dynamo", store)
+    monkeypatch.setattr(runner.wa, "send_text", lambda to, body, **k: sent.append((to, body)))
+    get_settings().work_dir = str(tmp_path)
+    monkeypatch.setattr(runner.s3, "upload_file", lambda p, key, ct=None: key)
+
+    def fake_fetch(media_id, work):
+        (work / "voice.ogg").write_bytes(b"ogg")
+        return work / "voice.ogg"
+
+    monkeypatch.setattr(runner, "fetch_voice_note", fake_fetch)
+    monkeypatch.setattr(runner, "transcode_for_playback", lambda n, out: out)
+    monkeypatch.setattr(runner, "extract_audio", lambda n, out: out.write_bytes(b"wav") or out)
+    monkeypatch.setattr(
+        runner.fpcheck,
+        "check",
+        lambda fp, **k: fpcheck.Verdict(
+            checked=True, duplicate=SimilarityMatch(review_id="old", exact=True)
+        ),
+    )
+    monkeypatch.setattr(
+        runner, "transcribe_audio", lambda *a, **k: pytest.fail("a duplicate is never transcribed")
+    )
+    sub = Submission(submission_id="v1", phone=PHONE, kind="voice", wa_media_id="m1")
+    store.subs["v1"] = sub
+    runner._run_pipeline(sub, Conversation(phone=PHONE, active_submission_id="v1"))
+    assert sub.state == SubmissionState.REJECTED and "duplicate of review old" in sub.progress_note
+    assert sub.media_sha256 and "already on Afefehub" in sent[-1][1]
 
 
 # ------------------------------------------------------------------ vendor discovery routing
