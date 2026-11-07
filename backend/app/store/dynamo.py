@@ -296,6 +296,17 @@ def list_all_businesses() -> list[Business]:
     return list_businesses_updated_since("")
 
 
+def set_business_country(business_id: str, country: str) -> None:
+    """Repair a business stored with a country name instead of its ISO alpha-2 code
+    (scripts/fix_countries.py). Identity fields are otherwise never rewritten."""
+    _table().update_item(
+        Key={"PK": f"BIZ#{business_id}", "SK": "META"},
+        UpdateExpression="SET country = :c",
+        ConditionExpression="attribute_exists(PK)",
+        ExpressionAttributeValues={":c": country},
+    )
+
+
 def list_businesses_by_category(category: str, limit: int = 50) -> list[Business]:
     r = _table().query(
         IndexName="GSI1",

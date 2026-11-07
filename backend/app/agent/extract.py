@@ -19,6 +19,7 @@ from app.agent import places
 from app.agent.prompts import EXTRACTION_SYSTEM, build_extraction_context
 from app.agent.tools import ALL_TOOLS, DRAFT_FIELDS, TOOLS_NO_ASK
 from app.config import get_settings
+from app.countries import country_code
 from app.meta.client import get_meta
 from app.models import Conversation, PlaceCandidate, ReviewExtraction, Submission
 
@@ -295,14 +296,14 @@ def _coerce(args: dict, known: dict[str, PlaceCandidate]) -> ReviewExtraction:
             "formatted_address": c.formatted_address or biz.get("formatted_address"),
             "lat": c.lat,
             "lng": c.lng,
-            "country": (c.country or biz.get("country") or "").upper(),
+            "country": country_code(c.country) or country_code(biz.get("country")) or "",
             "city": c.city or biz.get("city"),
             "primary_type": c.primary_type,
             "source": "google",
         }
     else:
         biz["source"] = "user"
-        biz["country"] = (biz.get("country") or "").upper()
+        biz["country"] = country_code(biz.get("country")) or ""
         if not pid.startswith("afefe:"):
             biz["place_id"] = f"afefe:{_slug(biz.get('name', ''))}-{_slug(biz.get('city', ''))}"
     args = {**args, "business": biz}
