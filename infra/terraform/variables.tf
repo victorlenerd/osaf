@@ -103,6 +103,12 @@ variable "desired_count" {
   default     = 1
 }
 
+variable "payouts_enabled" {
+  description = "Launch switch for the Nigeria payout programme (backend PAYOUTS_ENABLED). Keep false until launch day; flip it with the site's NEXT_PUBLIC_PAYOUTS_ENABLED. While false, reviewers keep 10 points per published review."
+  type        = bool
+  default     = false
+}
+
 variable "secret_names" {
   description = "SSM SecureString parameters created under /afefehub/prod/ (value CHANGEME, managed out of band) and injected into the task as secrets."
   type        = list(string)

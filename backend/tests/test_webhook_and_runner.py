@@ -1379,3 +1379,28 @@ def test_incr_discovery_count_and_erasure_of_counters(monkeypatch):
         ("CONV#p", "DISCO#2026-11-05"),
         ("CONV#p", "DISCO#2026-11-06"),
     ]
+
+
+# ------------------------------------------------------- before the payout launch (switch off)
+@pytest.fixture
+def payouts_off(monkeypatch):
+    monkeypatch.setattr(get_settings(), "payouts_enabled", False)
+
+
+def test_switch_off_keeps_the_current_points_scheme_in_chat(world, payouts_off, monkeypatch):
+    store, sent, events = world
+    store.points[PHONE] = 30
+    runner.process_inbound(PHONE, _text("points"), "Ada")
+    assert "You have 30 points" in sent[-1][1]
+    runner.process_inbound(PHONE, _text("hello"), "Ada")
+    assert "earns 10 points" in sent[-1][1] and "payout" not in sent[-1][1]
+    called: list[str] = []
+    monkeypatch.setattr(runner.rewards, "handle_enter", lambda c: called.append("enter"))
+    runner.process_inbound(PHONE, _text("ENTER"), "Ada")
+    assert not called  # no payout commands before launch
+
+
+def test_switch_off_delete_confirmation_mentions_points(eraser, payouts_off):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    assert "your 0 points" in sent[-1][1] and "bank details" not in sent[-1][1]

@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     weekly_review_limit: int = 3  # published reviews per reviewer in any rolling 7 days
     points_per_review: int = 10  # legacy flat reward; superseded by the payout tiers below
 
+    # Launch switch for the Nigeria payout programme. Off: reviewers keep the current scheme
+    # (points_per_review on every published review, "points" shows that balance) and no
+    # ENTER offer, VERIFY or bank-details flow runs. Duplicate detection, bans, crediting
+    # reels to their poster and media retention run either way. Turn on (PAYOUTS_ENABLED=true)
+    # on launch day, together with the site's NEXT_PUBLIC_PAYOUTS_ENABLED.
+    payouts_enabled: bool = False
+
     # Monthly payouts (app/rewards). Points per entered review, by kind; 1 point is worth up to
     # ngn_per_point naira, paid from a monthly pool per category group (pro rata when a
     # group's approved points are worth more than its pool). Nigeria only.

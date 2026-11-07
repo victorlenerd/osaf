@@ -78,6 +78,17 @@ export function languageName(code: string): string {
 export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "+234 803 174 9669";
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || "";
 
+/**
+ * Launch switch for the Nigeria payout programme, set at build time together with the backend's
+ * PAYOUTS_ENABLED. Off: the site shows the Terms and rewards card in force today.
+ */
+export const PAYOUTS_ENABLED = process.env.NEXT_PUBLIC_PAYOUTS_ENABLED === "true";
+
+/** The scheme in force before the payout launch: a flat reward per published review. Remove with CurrentRewardsCard. */
+export const POINTS_PER_REVIEW = 10;
+export const REWARD_POINTS = 100;
+export const REWARD_LABEL = "$10 Amazon gift card";
+
 /** Reviewer payouts (Nigeria only). Mirrors backend `app/rewards/rules.py` and the payout settings in `config.py`. */
 /** A reel someone else posted can still be published, but never earns points. */
 export const POINTS = { voice: 5, reelOther: 0, reelAuthor: 10 } as const;

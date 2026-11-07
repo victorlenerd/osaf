@@ -845,3 +845,18 @@ def test_publish_says_when_the_match_is_still_being_published(publishing, monkey
     sub = _sub(kind="reel", reel_shortcode="sc")
     assert publish.publish_submission(sub, Conversation(phone=ADA)) is None
     assert "being published on Afefehub right now" in sent[0]
+
+
+def test_switch_off_publish_awards_the_flat_points_and_makes_no_offer(
+    publishing, rewards_db, monkeypatch
+):
+    publish, saved, sent = publishing
+    monkeypatch.setattr(get_settings(), "payouts_enabled", False)
+    awarded: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        publish.dynamo, "add_points", lambda phone, n: awarded.append((phone, n)) or 40
+    )
+    review = publish.publish_submission(_sub(), Conversation(phone=ADA))
+    assert review is not None and awarded == [(ADA, 10)]
+    assert "+10 points, you now have 40" in sent[0] and "ENTER" not in sent[0]
+    assert not rewards_db.offers

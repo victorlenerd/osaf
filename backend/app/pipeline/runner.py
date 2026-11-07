@@ -71,11 +71,17 @@ def help_text() -> str:
         "the business name and area clearly.\n\nLooking for somewhere good? Just ask, e.g. "
         "*best suya in Lekki* or *barber in Wuse 2*, or share your location 📍 and I'll "
         "suggest places other customers recommend.\n\n"
-        f"You can publish up to {s.weekly_review_limit} reviews a week. Reviews of businesses "
-        "in Nigeria can be entered for our monthly payout: "
-        f"{s.points_voice} pts for a voice note, {s.points_reel_author} for a reel you posted "
-        "yourself (reels someone else posted earn nothing). Text *points* anytime to see your "
-        "entries, or *delete my data* to erase everything I hold about you."
+        f"You can publish up to {s.weekly_review_limit} reviews a week. "
+        + (
+            "Reviews of businesses in Nigeria can be entered for our monthly payout: "
+            f"{s.points_voice} pts for a voice note, {s.points_reel_author} for a reel you posted "
+            "yourself (reels someone else posted earn nothing). Text *points* anytime to see "
+            "your entries"
+            if s.payouts_enabled
+            else f"Every published review earns {s.points_per_review} points. Text *points* "
+            "anytime to see your total"
+        )
+        + ", or *delete my data* to erase everything I hold about you."
     )
 
 
@@ -264,7 +270,7 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
 
     # 1b. payouts: bank details we asked for, ENTER, VERIFY, "bank details", and "points".
     #     Answered even mid-review so they never burn a clarification.
-    if mtype == "text":
+    if mtype == "text" and get_settings().payouts_enabled:
         if rewards.handle_details_reply(conv, text):
             return
         if rewards.ENTER_WORDS.match(text):
@@ -278,7 +284,11 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             return
     if mtype == "text" and POINTS_WORDS.match(text):
         q = quota.weekly_quota(phone)
-        body = f"{rewards.points_text(phone)}\n\n{quota.slots_line(q)}"
+        if get_settings().payouts_enabled:
+            balance = rewards.points_text(phone)
+        else:
+            balance = f"⭐ You have {dynamo.get_points(phone)} points."
+        body = f"{balance}\n\n{quota.slots_line(q)}"
         if active and active.pending_question:
             body += "\n\nYour current review is still waiting for your reply 🙂"
         wa.send_text(phone, body)
@@ -579,9 +589,14 @@ def _ask_to_confirm_deletion(conv: Conversation, active: Submission | None) -> N
         conv.phone,
         "⚠️ This will permanently erase everything Afefehub holds about this number: "
         f"{reviews}{extra}, our stored copies of your videos, voice notes and transcripts, "
-        f"your chat history, {_entries_phrase(p)} and your bank details. Your reviews "
-        "disappear from afefehub.com right away, and anything not yet paid is forfeited. "
-        "This cannot be undone.\n\n"
+        + (
+            f"your chat history, {_entries_phrase(p)} and your bank details. Your reviews "
+            "disappear from afefehub.com right away, and anything not yet paid is forfeited. "
+            if get_settings().payouts_enabled
+            else f"your chat history and your {p.points} points. Your reviews disappear from "
+            "afefehub.com right away. "
+        )
+        + "This cannot be undone.\n\n"
         f"Reply *DELETE* (in capitals) within {DELETE_WINDOW_SECONDS // 60} minutes to "
         "confirm. Reply anything else, or nothing, to keep your data.\n\n"
         "Only want one review taken down? Don't confirm; email privacy@afefehub.com with the "
