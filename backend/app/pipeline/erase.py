@@ -196,7 +196,9 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
         return
     reviews = [r for r in dynamo.list_reviews(business_id) if r.status == "published"]
     if not reviews:
-        # Only hidden reviews are left (a ban): keep them, but take the business off search.
+        # Only hidden reviews are left (a ban): keep them, but take the business off search
+        # and drop its summary, which paraphrases those reviews and the page would still show.
+        dynamo.delete_summary(business_id)
         opensearch.delete_business(business_id)
         report.businesses_rebuilt.append(business_id)
         return

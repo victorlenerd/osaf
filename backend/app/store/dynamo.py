@@ -451,6 +451,10 @@ def get_summary(business_id: str) -> BusinessSummary | None:
     return BusinessSummary(**_from_item(r["Item"])) if "Item" in r else None
 
 
+def delete_summary(business_id: str) -> None:
+    _table().delete_item(Key={"PK": f"BIZ#{business_id}", "SK": "SUMMARY"})
+
+
 def put_summary(business_id: str, s: BusinessSummary) -> None:
     _table().put_item(Item={"PK": f"BIZ#{business_id}", "SK": "SUMMARY", **_to_item(s)})
 

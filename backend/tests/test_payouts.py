@@ -752,3 +752,56 @@ def test_near_copy_published_since_the_pipeline_check_is_refused(publishing, mon
     assert publish.publish_submission(sub, Conversation(phone=ADA)) is None
     assert sub.state == SubmissionState.REJECTED and sub.error == "duplicate of review twin"
     assert "review" not in saved and "already on Afefehub" in sent[0]
+
+
+def test_of_two_near_copies_published_together_the_later_yields(monkeypatch):
+    """Each publish indexes its own fingerprint first, then looks only at earlier reviews."""
+    from app.fingerprint import index
+
+    fp = Fingerprint(audio=[7] * 50)
+    docs = [{"review_id": "01B", "business_id": "b", "fp": fp.model_dump()}]
+    monkeypatch.setattr(index, "enabled", lambda: True)
+    monkeypatch.setattr(index, "candidates", lambda f, exclude=None, size=20: list(docs))
+    # 01A was created first: 01B is later, so it is not counted against 01A
+    assert check.check(fp, exclude="01A", before="01A").duplicate is None
+    # 01C, created after 01B, sees it as a duplicate
+    assert check.check(fp, exclude="01C", before="01C").duplicate.review_id == "01B"
+
+
+def test_publish_releases_its_locks_when_storing_the_review_fails(
+    publishing, rewards_db, monkeypatch
+):
+    publish, saved, sent = publishing
+
+    def broken(review):
+        raise RuntimeError("DynamoDB unavailable")
+
+    monkeypatch.setattr(publish.dynamo, "put_review", broken)
+    sub = _sub(kind="reel", reel_shortcode="sc", media_sha256="abc")
+    with pytest.raises(RuntimeError):
+        publish.publish_submission(sub, Conversation(phone=ADA))
+    assert "abc" not in rewards_db.media and saved["released"] == "sc"
+    assert sub.state == SubmissionState.CONFIRMING  # can be confirmed again
+
+
+def test_business_left_with_only_hidden_reviews_loses_its_summary(monkeypatch):
+    from app.pipeline import erase
+
+    hidden = _review("h1")
+    hidden.status = "hidden"
+    calls: list[str] = []
+    biz = Business(business_id="biz-h1", name="n", formatted_address="a", country="NG")
+    monkeypatch.setattr(erase.dynamo, "rebuild_business_counters", lambda bid: biz)
+    monkeypatch.setattr(erase.dynamo, "list_reviews", lambda bid: [hidden])
+    monkeypatch.setattr(erase.dynamo, "delete_summary", lambda bid: calls.append(f"summary:{bid}"))
+    monkeypatch.setattr(
+        erase.opensearch, "delete_business", lambda bid: calls.append(f"search:{bid}")
+    )
+    monkeypatch.setattr(erase, "generate_summary", lambda *a: pytest.fail("no summary of hidden"))
+    report = erase.rebuild_businesses(["biz-h1"])
+    assert calls == ["summary:biz-h1", "search:biz-h1"] and report.businesses_rebuilt == ["biz-h1"]
+
+
+def test_offer_names_no_month(rewards_db):
+    text = flow.offer_after_publish(_review("v1"), ADA)
+    assert "monthly payout" in text and rules.window_label(rules.window_for()) not in text

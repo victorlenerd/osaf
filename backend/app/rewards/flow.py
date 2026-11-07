@@ -74,9 +74,10 @@ def offer_after_publish(review: Review, phone: str, *, banned: bool = False) -> 
         PayoutOffer(review_id=review.review_id, phone=phone),
         s.payout_offer_days * 86400,
     )
-    label = rules.window_label(rules.window_for())
+    # No month here: the entry joins the window of the day the reviewer replies ENTER (the
+    # offer stays open for days), and the ENTER confirmation names that month.
     return (
-        f"💰 Want this review entered for the *{label}* payout? Reply *ENTER*.\n"
+        "💰 Want this review entered for our monthly payout? Reply *ENTER*.\n"
         f"Voice notes earn {s.points_voice} pts and reels you posted yourself "
         f"{s.points_reel_author} (once you verify they're yours). "
         f"1 pt = up to {rules.naira(s.ngn_per_point)}, paid monthly by bank transfer in Nigeria."

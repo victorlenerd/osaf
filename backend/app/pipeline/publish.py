@@ -80,67 +80,94 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     if bans.is_banned(sub.phone):
         _reject(sub, "banned", bans.BANNED_MSG)
         return None
-    # Check again now: the pipeline's check ran before the reviewer confirmed, which can be
-    # hours earlier, and a near-copy (one the exact-media lock below cannot see) may have been
-    # published in between.
-    fp = _load_fingerprint(sub)
-    if fp is not None:
-        verdict = fpcheck.check(fp)
-        if verdict.duplicate is not None:
+    review_id = str(ULID())
+    reviewer = phone_hash(sub.phone)
+    # Locks taken for this review, undone if publishing fails before the review is stored:
+    # a lock left behind would make a retry look like a duplicate of itself.
+    undo: list = []
+
+    def release() -> None:
+        for step in reversed(undo):
+            try:
+                step()
+            except Exception:  # noqa: BLE001
+                log.exception("could not release a publish lock for %s", review_id)
+
+    if sub.kind == "reel":
+        if not dynamo.claim_reel(sub.reel_shortcode or "", review_id):
             _reject(
                 sub,
-                f"duplicate of review {verdict.duplicate.review_id}",
-                DUPLICATE_MSG.format(what=what),
+                "reel already reviewed",
+                "That reel has already been published on Afefehub, so I won't add it twice.",
             )
             return None
-        if verdict.checked:
-            sub.similarity_checked = True
-            sub.similarity = verdict.similar
-    review_id = str(ULID())
-    if sub.kind == "reel" and not dynamo.claim_reel(sub.reel_shortcode or "", review_id):
-        _reject(
-            sub,
-            "reel already reviewed",
-            "That reel has already been published on Afefehub, so I won't add it twice.",
+        undo.append(lambda: dynamo.delete_reel_claim(sub.reel_shortcode or ""))
+    if sub.media_sha256:
+        if not rstore.claim_media(sub.media_sha256, review_id):
+            release()
+            _reject(sub, "duplicate media", DUPLICATE_MSG.format(what=what))
+            return None
+        undo.append(lambda: rstore.delete_media_claim(sub.media_sha256 or ""))
+
+    try:
+        fp = _load_fingerprint(sub)
+        if fp is not None:
+            # Index this fingerprint first, then compare it with every earlier review. The
+            # pipeline's check ran before the reviewer confirmed (possibly hours ago), and two
+            # near-copies confirmed at the same moment would each miss the other if we only
+            # indexed after publishing; this way the later of the two always sees the earlier.
+            try:
+                fpindex.put(review_id, ext.business.place_id, reviewer, now_iso(), fp)
+            except Exception:  # noqa: BLE001
+                log.exception("fingerprint index failed for %s", review_id)
+            undo.append(lambda: fpindex.delete(review_id))
+            verdict = fpcheck.check(fp, exclude=review_id, before=review_id)
+            if verdict.duplicate is not None:
+                release()
+                _reject(
+                    sub,
+                    f"duplicate of review {verdict.duplicate.review_id}",
+                    DUPLICATE_MSG.format(what=what),
+                )
+                return None
+            if verdict.checked:
+                sub.similarity_checked = True
+                sub.similarity = verdict.similar
+
+        moved = _retain_media(sub, review_id)
+
+        def kept(key: str | None) -> str | None:
+            return moved.get(key, key) if key else None
+
+        review = Review(
+            review_id=review_id,
+            business_id=ext.business.place_id,
+            submission_id=sub.submission_id,
+            reviewer_phone_hash=reviewer,
+            reviewer_display_name=conv.display_name,
+            reviewer_country=country_from_phone(sub.phone),
+            source=sub.kind,
+            reel_url=sub.reel_url,
+            reel_shortcode=sub.reel_shortcode,
+            extraction=ext,
+            transcript_s3_key=kept(sub.s3_transcript_key),
+            video_s3_key=kept(sub.s3_video_key),
+            audio_s3_key=kept(sub.s3_voice_key),
+            face_check=sub.face_check,
+            ig_username=sub.ig_username,
+            ig_author_verified=bool(sub.ig_username)
+            and rstore.get_ig_link(sub.ig_username) == reviewer,
+            ig_uploader_id=sub.ig_uploader_id,
+            ig_posted_at=sub.ig_posted_at,
+            media_sha256=sub.media_sha256,
+            fingerprint_s3_key=kept(sub.s3_fingerprint_key),
+            similarity=sub.similarity,
+            similarity_checked=sub.similarity_checked,
         )
-        return None
-    if sub.media_sha256 and not rstore.claim_media(sub.media_sha256, review_id):
-        if sub.kind == "reel" and sub.reel_shortcode:
-            dynamo.delete_reel_claim(sub.reel_shortcode)  # taken a moment ago, for this review
-        _reject(sub, "duplicate media", DUPLICATE_MSG.format(what=what))
-        return None
-
-    moved = _retain_media(sub, review_id)
-
-    def kept(key: str | None) -> str | None:
-        return moved.get(key, key) if key else None
-
-    review = Review(
-        review_id=review_id,
-        business_id=ext.business.place_id,
-        submission_id=sub.submission_id,
-        reviewer_phone_hash=phone_hash(sub.phone),
-        reviewer_display_name=conv.display_name,
-        reviewer_country=country_from_phone(sub.phone),
-        source=sub.kind,
-        reel_url=sub.reel_url,
-        reel_shortcode=sub.reel_shortcode,
-        extraction=ext,
-        transcript_s3_key=kept(sub.s3_transcript_key),
-        video_s3_key=kept(sub.s3_video_key),
-        audio_s3_key=kept(sub.s3_voice_key),
-        face_check=sub.face_check,
-        ig_username=sub.ig_username,
-        ig_author_verified=bool(sub.ig_username)
-        and rstore.get_ig_link(sub.ig_username) == phone_hash(sub.phone),
-        ig_uploader_id=sub.ig_uploader_id,
-        ig_posted_at=sub.ig_posted_at,
-        media_sha256=sub.media_sha256,
-        fingerprint_s3_key=kept(sub.s3_fingerprint_key),
-        similarity=sub.similarity,
-        similarity_checked=sub.similarity_checked,
-    )
-    dynamo.put_review(review)
+        dynamo.put_review(review)
+    except Exception:
+        release()
+        raise
     business = dynamo.upsert_business_on_publish(ext)
 
     reviews = [r for r in dynamo.list_reviews(business.business_id) if r.status == "published"]
@@ -154,13 +181,6 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         opensearch.upsert_business(business, summary)
     except Exception:  # noqa: BLE001
         log.exception("opensearch upsert failed for %s", business.business_id)
-    if fp is not None:
-        try:
-            fpindex.put(
-                review_id, business.business_id, review.reviewer_phone_hash, review.created_at, fp
-            )
-        except Exception:  # noqa: BLE001
-            log.exception("fingerprint index failed for %s", review_id)
 
     sub.review_id = review_id
     sub.business_id = business.business_id

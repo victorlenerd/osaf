@@ -71,8 +71,12 @@ def judge(matches: list[SimilarityMatch]) -> Verdict:
     return v
 
 
-def check(fp: Fingerprint, *, exclude: str | None = None) -> Verdict:
-    """Never raises: a failing index yields an unchecked verdict, not a blocked review."""
+def check(fp: Fingerprint, *, exclude: str | None = None, before: str | None = None) -> Verdict:
+    """Never raises: a failing index yields an unchecked verdict, not a blocked review.
+
+    With `before` (a review id), only reviews with a smaller id count. Review ids are ULIDs,
+    so that means reviews created earlier: of two near-copies published at the same moment,
+    the earlier one never yields to the later."""
     if not index.enabled():
         return Verdict(checked=False)
     try:
@@ -80,6 +84,8 @@ def check(fp: Fingerprint, *, exclude: str | None = None) -> Verdict:
     except Exception:  # noqa: BLE001
         log.exception("fingerprint lookup failed")
         return Verdict(checked=False)
+    if before is not None:
+        docs = [d for d in docs if d["review_id"] < before]
     matches = [
         score(fp, Fingerprint(**d.get("fp", {})), d["review_id"], d.get("business_id"))
         for d in docs
