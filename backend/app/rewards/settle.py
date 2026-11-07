@@ -47,33 +47,40 @@ def normalise_decision(raw: str | None) -> str:
 
 def apply_decisions(
     entries: list[PayoutEntry], decisions: dict[str, tuple[str, str]]
-) -> tuple[list[PayoutEntry], set[str]]:
-    """Set each open entry to approved or voided from {review_id: (decision, note)}.
+) -> tuple[list[PayoutEntry], set[str], list[PayoutEntry]]:
+    """Set each open entry to approved or voided from {review_id: (decision, note)}, where
+    `decisions` holds every row of the reviewed spreadsheet (a blank decision is approve).
 
-    Returns (changed entries, phone hashes to ban). A ban voids every open entry of that
-    reviewer in the window, not only the row it was written on. A reel whose author was never
-    verified is voided whatever the decision: it is worth nothing. Paid and already-voided
-    entries are left alone."""
+    Returns (changed entries, phone hashes to ban, entries missing from the sheet). An entry
+    nobody saw (entered, or changed, after the export) is never approved by default: it is
+    left open for the next export. A ban voids every open entry of that reviewer in the
+    window, seen or not. A reel whose author was never verified is voided whatever the
+    decision: it is worth nothing. Paid and already-voided entries are left alone."""
     to_ban: set[str] = set()
     for e in entries:
-        decision, _ = decisions.get(e.review_id, ("approve", ""))
-        if normalise_decision(decision) == "ban":
+        decision, _ = decisions.get(e.review_id, ("", ""))
+        if e.review_id in decisions and normalise_decision(decision) == "ban":
             to_ban.add(e.phone_hash)
-    changed = []
+    changed: list[PayoutEntry] = []
+    missing: list[PayoutEntry] = []
     for e in entries:
         if e.status not in ("entered", "approved"):
             continue
-        decision, note = decisions.get(e.review_id, ("approve", ""))
-        d = normalise_decision(decision)
         if e.phone_hash in to_ban:
-            d, note = "void", note or "reviewer banned"
-        elif e.kind == "reel_unverified":
-            d, note = "void", "author not verified"
+            d, note = "void", decisions.get(e.review_id, ("", ""))[1] or "reviewer banned"
+        elif e.review_id not in decisions:
+            missing.append(e)
+            continue
+        else:
+            decision, note = decisions[e.review_id]
+            d = normalise_decision(decision)
+            if e.kind == "reel_unverified":
+                d, note = "void", "author not verified"
         e.status = "approved" if d == "approve" else "voided"
         e.note = note or None
         e.decided_at = now_iso()
         changed.append(e)
-    return changed, to_ban
+    return changed, to_ban, missing
 
 
 def compute(entries: list[PayoutEntry]) -> tuple[dict[str, GroupTotal], list[PayeeTotal]]:

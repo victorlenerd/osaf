@@ -442,7 +442,7 @@ def test_code_from_the_right_account_verifies_the_author(wa_world, rewards_db):
     e = rewards_db.entries[(phone_hash(ADA), "r1")]
     assert (e.kind, e.points, e.ig_code) == ("reel_author", 10, None) and e.ig_verified_at
     assert rewards_db.links["ada.eats"] == phone_hash(ADA) and code not in rewards_db.codes
-    assert "Verified" in ig.sent[-1] and "now earns 10 pts" in sent[-1][1]
+    assert "Verified" in ig.sent[-1] and "10 pts each" in sent[-1][1]
     # every reel Ada sent from that account is now credited to her, and only those
     credited = {rid for rid, r in reviews.items() if r.ig_author_verified}
     assert credited == {"r1", "r7"}
@@ -453,6 +453,25 @@ def test_settled_entry_cannot_be_upgraded(wa_world, rewards_db):
     rewards_db.entries[(phone_hash(ADA), "r1")].status = "approved"
     assert verify.handle_ig_message("igsid1", code, FakeIG("ada.eats")) == "entry_closed"
     assert rewards_db.entries[(phone_hash(ADA), "r1")].points == 0
+
+
+def test_verifying_upgrades_every_open_reel_from_that_account(wa_world, rewards_db):
+    _, code = _entered_reel(rewards_db)
+    h = phone_hash(ADA)
+    second = rewards_db.entries[(h, "r1")].model_copy(
+        update={"review_id": "r2", "business_name": "Suya Spot", "ig_code": "AFH-XYZ789"}
+    )
+    other = second.model_copy(update={"review_id": "r3", "ig_username": "other.page"})
+    paid = second.model_copy(update={"review_id": "r4", "status": "voided", "ig_code": None})
+    for e in (second, other, paid):
+        rewards_db.entries[(h, e.review_id)] = e
+    rewards_db.codes["AFH-XYZ789"] = {"phone_hash": h}
+    assert verify.handle_ig_message("igsid1", code, FakeIG("ada.eats")) == "verified"
+    kinds = {rid: e.kind for (_, rid), e in rewards_db.entries.items()}
+    assert kinds == {
+        "r1": "reel_author", "r2": "reel_author", "r3": "reel_unverified", "r4": "reel_unverified",
+    }  # fmt: skip
+    assert "AFH-XYZ789" not in rewards_db.codes  # the second code is no longer needed
 
 
 def test_code_from_another_account_is_refused(wa_world, rewards_db):
@@ -518,7 +537,7 @@ def test_under_pool_pays_full_rate_and_over_pool_pays_pro_rata(monkeypatch):
     entries = [_entry("e1", "hotels", 10), _entry("e2", "others", 10, phone=BOB)]
     entries += [_entry(f"e{i}", "others", 5) for i in range(3, 7)]  # others: 30 pts vs ₦30k
     entries.append(_entry("e7", "others", 5))  # 35 pts vs ₦30k -> ₦857.14/pt
-    settle.apply_decisions(entries, {})
+    settle.apply_decisions(entries, {e.review_id: ("", "") for e in entries})  # all approved
     groups, payees = settle.compute(entries)
     assert groups["hotels"].rate_ngn == 1000 and entries[0].amount_ngn == 10_000
     assert groups["others"].rate_ngn == pytest.approx(30_000 / 35)
@@ -536,18 +555,33 @@ def test_decisions_void_and_ban(monkeypatch):
         _entry("e3", "others", 5, phone=BOB),
         _entry("e4", "others", 5, phone=BOB, status="paid"),
     ]
-    changed, to_ban = settle.apply_decisions(
-        entries, {"e1": ("VOID", "blurry"), "e3": ("ban", "spam same reel")}
-    )
+    seen = {"e1": ("VOID", "blurry"), "e2": ("", ""), "e3": ("ban", "spam same reel")}
+    changed, to_ban, missing = settle.apply_decisions(entries, seen)
     status = {e.review_id: e.status for e in entries}
     assert status == {"e1": "voided", "e2": "approved", "e3": "voided", "e4": "paid"}
+    assert to_ban == {phone_hash(BOB)} and len(changed) == 3 and not missing
+    with pytest.raises(ValueError):
+        settle.normalise_decision("aprove")
     reel = _entry("e5", "others", 0)
     reel.kind = "reel_unverified"
     settle.apply_decisions([reel], {"e5": ("approve", "")})
     assert reel.status == "voided" and reel.note == "author not verified"
-    assert to_ban == {phone_hash(BOB)} and len(changed) == 3
-    with pytest.raises(ValueError):
-        settle.normalise_decision("aprove")
+
+
+def test_entries_nobody_saw_are_never_approved_by_default():
+    """A reel verified (or an entry made) after the export is not in the sheet: it stays open
+    for the next export rather than being paid unseen. A ban still reaches it."""
+    late = _entry("e1", "others", 10)
+    late.kind = "reel_author"  # verified between export and settle
+    seen = _entry("e2", "others", 5)
+    changed, _, missing = settle.apply_decisions([late, seen], {"e2": ("", "")})
+    assert late.status == "entered" and missing == [late] and changed == [seen]
+    groups, payees = settle.compute([late, seen])
+    assert [p.amount_ngn for p in payees] == [5000]
+    banned = _entry("e3", "others", 5, phone=BOB)
+    shown = _entry("e4", "others", 5, phone=BOB)
+    settle.apply_decisions([banned, shown], {"e4": ("ban", "spam")})
+    assert banned.status == "voided" and shown.status == "voided"
 
 
 # ---------------------------------------------------------------------------- bans
@@ -673,3 +707,48 @@ def test_publish_credits_a_reel_from_an_account_already_verified_to_the_sender(
     assert publish.publish_submission(sub, Conversation(phone=ADA)).ig_author_verified
     sub = _sub(kind="reel", reel_shortcode="sc2", ig_username="stranger", submission_id="s2")
     assert not publish.publish_submission(sub, Conversation(phone=ADA)).ig_author_verified
+
+
+# ------------------------------------------------------- reel sent as a WhatsApp file
+def test_reel_sent_on_whatsapp_still_learns_its_poster(monkeypatch, tmp_path):
+    from app.pipeline import runner
+    from app.pipeline.download import DownloadError, ReelMeta
+
+    calls: list[str] = []
+
+    def meta(url, work):
+        calls.append(url)
+        return ReelMeta(username="ada.eats", uploader_id="42", posted_at="2026-11-01T10:00:00Z")
+
+    monkeypatch.setattr(runner, "reel_metadata", meta)
+    sub = Submission(submission_id="s1", phone=ADA, reel_url="https://www.instagram.com/reel/x/")
+    runner._fill_reel_owner(sub, tmp_path)
+    assert (sub.ig_username, sub.ig_uploader_id) == ("ada.eats", "42")
+    runner._fill_reel_owner(sub, tmp_path)  # already known: no second lookup
+    assert len(calls) == 1
+
+    def refuse(url, work):
+        raise DownloadError("rate limited")
+
+    monkeypatch.setattr(runner, "reel_metadata", refuse)
+    other = Submission(submission_id="s2", phone=ADA, reel_url="https://www.instagram.com/reel/y/")
+    runner._fill_reel_owner(other, tmp_path)  # Instagram refused: publishes without a poster
+    assert other.ig_username is None
+
+
+def test_near_copy_published_since_the_pipeline_check_is_refused(publishing, monkeypatch):
+    """Two near-identical reels in flight together both pass the pipeline check; whichever
+    is confirmed second is caught by the check repeated at publish."""
+    publish, saved, sent = publishing
+    monkeypatch.setattr(publish, "_load_fingerprint", lambda sub: Fingerprint(audio=[1]))
+    monkeypatch.setattr(
+        publish.fpcheck,
+        "check",
+        lambda fp, **k: check.Verdict(
+            checked=True, duplicate=SimilarityMatch(review_id="twin", audio=0.95)
+        ),
+    )
+    sub = _sub(kind="reel", reel_shortcode="sc", similarity_checked=True)
+    assert publish.publish_submission(sub, Conversation(phone=ADA)) is None
+    assert sub.state == SubmissionState.REJECTED and sub.error == "duplicate of review twin"
+    assert "review" not in saved and "already on Afefehub" in sent[0]

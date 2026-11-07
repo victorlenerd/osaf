@@ -42,6 +42,7 @@ from app.pipeline.download import (
     download_reel,
     extract_audio,
     extract_reel,
+    reel_metadata,
     transcode_for_sam,
 )
 from app.pipeline.facecheck import run_face_check
@@ -756,18 +757,18 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
                 sub.ig_username = dl.meta.username
                 sub.ig_uploader_id = dl.meta.uploader_id
                 sub.ig_posted_at = dl.meta.posted_at
-                if bans.ig_account_banned(sub.ig_username):
-                    _set_state(sub, SubmissionState.REJECTED, "reel from a banned account")
-                    wa.send_text(
-                        sub.phone,
-                        "Reels from that Instagram account can't be published on Afefehub.",
-                    )
-                    return
             else:
                 video, audio = work / "source.mp4", work / "audio.wav"
                 if not video.exists() and sub.s3_video_key:
                     s3.download_file(sub.s3_video_key, video)
                     extract_audio(video, audio)
+                _fill_reel_owner(sub, work)
+            if bans.ig_account_banned(sub.ig_username):
+                _set_state(sub, SubmissionState.REJECTED, "reel from a banned account")
+                wa.send_text(
+                    sub.phone, "Reels from that Instagram account can't be published on Afefehub."
+                )
+                return
             sub.s3_video_key = s3.upload_file(video, s3.Keys.video(sid), "video/mp4")
             sub.s3_audio_key = s3.upload_file(audio, s3.Keys.audio(sid), "audio/wav")
 
@@ -843,6 +844,23 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
         _extract_and_route(sub, conv, latest_answer=None)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _fill_reel_owner(sub: Submission, work: Path) -> None:
+    """The reel's video did not come from our Instagram download (the reviewer sent the file
+    on WhatsApp, or a stage is resuming), so we have not yet learnt who posted it. Ask for the
+    link's metadata alone, so the author check and banned-account check still work. When
+    Instagram refuses that too, the reel publishes without a known poster (and cannot earn)."""
+    if sub.ig_username or not sub.reel_url:
+        return
+    try:
+        meta = reel_metadata(sub.reel_url, work / "meta")
+    except DownloadError as e:
+        log.info("poster of %s unknown: %s", sub.submission_id, str(e)[:120])
+        return
+    sub.ig_username = meta.username
+    sub.ig_uploader_id = meta.uploader_id
+    sub.ig_posted_at = meta.posted_at
 
 
 def _rejected_as_duplicate(sub: Submission, verdict: fpcheck.Verdict) -> bool:

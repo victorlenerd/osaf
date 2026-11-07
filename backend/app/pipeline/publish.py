@@ -80,6 +80,22 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     if bans.is_banned(sub.phone):
         _reject(sub, "banned", bans.BANNED_MSG)
         return None
+    # Check again now: the pipeline's check ran before the reviewer confirmed, which can be
+    # hours earlier, and a near-copy (one the exact-media lock below cannot see) may have been
+    # published in between.
+    fp = _load_fingerprint(sub)
+    if fp is not None:
+        verdict = fpcheck.check(fp)
+        if verdict.duplicate is not None:
+            _reject(
+                sub,
+                f"duplicate of review {verdict.duplicate.review_id}",
+                DUPLICATE_MSG.format(what=what),
+            )
+            return None
+        if verdict.checked:
+            sub.similarity_checked = True
+            sub.similarity = verdict.similar
     review_id = str(ULID())
     if sub.kind == "reel" and not dynamo.claim_reel(sub.reel_shortcode or "", review_id):
         _reject(
@@ -93,13 +109,6 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
             dynamo.delete_reel_claim(sub.reel_shortcode)  # taken a moment ago, for this review
         _reject(sub, "duplicate media", DUPLICATE_MSG.format(what=what))
         return None
-
-    fp = _load_fingerprint(sub)
-    if fp is not None and not sub.similarity_checked:
-        # The pipeline could not reach the index; try once more before deciding on points.
-        verdict = fpcheck.check(fp)
-        sub.similarity_checked = verdict.checked
-        sub.similarity = verdict.similar
 
     moved = _retain_media(sub, review_id)
 

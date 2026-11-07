@@ -33,6 +33,25 @@ def _reply(ig, igsid: str, text: str) -> None:
         log.exception("could not reply on Instagram")
 
 
+def _upgrade_entries(reviewer_hash: str, username: str) -> list:
+    """Make every still-open entry for a reel from `username` an author reel."""
+    upgraded = []
+    for e in rstore.list_entries(reviewer_hash):
+        if e.status != "entered" or e.kind != "reel_unverified":
+            continue
+        if (e.ig_username or "").lower() != username:
+            continue
+        if e.ig_code:
+            rstore.delete_ig_code(e.ig_code)
+        e.kind = "reel_author"
+        e.points = rules.points_for("reel_author")
+        e.ig_verified_at = now_iso()
+        e.ig_code = None
+        rstore.put_entry(e)
+        upgraded.append(e)
+    return upgraded
+
+
 def _credit_reels(reviewer_hash: str, username: str) -> None:
     """Credit every reel this sender published from the now-verified account to them."""
     try:
@@ -89,24 +108,20 @@ def handle_ig_message(igsid: str, text: str, ig=None) -> str:
         )
         return "linked_elsewhere"
 
-    entry.kind = "reel_author"
-    entry.points = rules.points_for("reel_author")
-    entry.ig_verified_at = now_iso()
-    entry.ig_code = None
-    rstore.put_entry(entry)
+    # Authorship of the account is now proven: every open reel this reviewer entered from it
+    # becomes an author reel, not only the one whose code was sent.
+    upgraded = _upgrade_entries(reviewer_hash, username)
     rstore.delete_ig_code(code)
     _credit_reels(reviewer_hash, username)
-    _reply(
-        ig,
-        igsid,
-        f"Verified ✅ Your review of {entry.business_name} now earns {entry.points} points.",
-    )
+    names = ", ".join(e.business_name for e in upgraded) or entry.business_name
+    points = rules.points_for("reel_author")
+    _reply(ig, igsid, f"Verified ✅ Your reviews of {names} now earn {points} points each.")
     if entry.phone:
         wa.send_text(
             entry.phone,
-            f"✅ Instagram verified (@{username}). Your review of *{entry.business_name}* now "
-            f"earns {entry.points} pts, and future reels from @{username} count as yours "
-            "automatically.",
+            f"✅ Instagram verified (@{username}). Your review{'s' if len(upgraded) > 1 else ''} "
+            f"of *{names}* now earn{'' if len(upgraded) > 1 else 's'} {points} pts each, and "
+            f"future reels from @{username} count as yours automatically.",
         )
     log.info("author verified for review %s via @%s", entry.review_id, s.afefehub_ig_handle)
     return "verified"

@@ -79,7 +79,9 @@ def test_export_settle_and_mark_paid(script):
     header = [c.value for c in others[1]]
     rows = {r[header.index("review_id")].value: r for r in others.iter_rows(min_row=2)}
     hotel_ids = [r[0].value for r in wb["Hotels"].iter_rows(min_row=2)]
-    assert hotel_ids == ["r4"]  # the unverified reel is left out: it can only be voided
+    assert hotel_ids == ["r4", "r5"]  # unverified reels are shown too, flagged
+    hflags = [r[header.index("flags")].value for r in wb["Hotels"].iter_rows(min_row=2)]
+    assert "author not verified" in hflags[1]
     assert set(rows) == {"r2", "r3"} and rows["r2"][header.index("phone")].value == "***1111"
     assert rows["r2"][header.index("media_link")].value == "https://s3/reviews/r2/voice.m4a"
     # the reviewer voids Chi's hotel reel and bans Bob

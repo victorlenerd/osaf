@@ -95,6 +95,8 @@ def _row(e: PayoutEntry, review: Review | None, counts: dict[str, int], metrics:
         note=e.note or "",
     )
     flags = []
+    if e.kind == "reel_unverified":
+        flags.append("author not verified yet: voided at settle unless verified first")
     if not e.similarity_checked:
         flags.append("duplicate check incomplete at publish")
     if review is None:
@@ -149,10 +151,10 @@ def cmd_export(args) -> int:
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
-    # Reels whose author never verified are worth nothing; settle voids them, nobody judges them.
-    all_entries = rstore.list_window(args.window)
-    entries = [e for e in all_entries if e.kind != "reel_unverified"]
-    unverified = len(all_entries) - len(entries)
+    # Every entry goes in the sheet, unverified reels included: settle only acts on rows a
+    # person has seen, and an author may still verify between this export and the settle.
+    entries = rstore.list_window(args.window)
+    unverified = sum(1 for e in entries if e.kind == "reel_unverified")
     if not entries:
         print(f"no entries in {args.window}")
         return 0
@@ -183,8 +185,8 @@ def cmd_export(args) -> int:
     out = Path(args.out or f"payout-{args.window}.xlsx")
     wb.save(out)
     print(
-        f"wrote {out} ({len(entries)} entries; {unverified} unverified reels left out, they will "
-        "be voided). Fill `decision` (approve/void/ban) and `note`."
+        f"wrote {out} ({len(entries)} entries, {unverified} reels not yet verified). Fill "
+        "`decision` (approve/void/ban) and `note`."
     )
     return 0
 
@@ -220,7 +222,7 @@ def cmd_settle(args) -> int:
     decisions = _read_decisions(Path(args.sheet))
     for d, _ in decisions.values():
         settle.normalise_decision(d)  # fail on a typo before anything is written
-    changed, to_ban = settle.apply_decisions(entries, decisions)
+    changed, to_ban, missing = settle.apply_decisions(entries, decisions)
     groups, payees = settle.compute(entries)
 
     print(f"window {args.window}: {len(entries)} open entries")
@@ -231,6 +233,13 @@ def cmd_settle(args) -> int:
         )
     voided = sum(1 for e in changed if e.status == "voided")
     print(f"  approved {len(changed) - voided}, voided {voided}, reviewers to ban {len(to_ban)}")
+    if missing:
+        print(
+            f"  {len(missing)} entries are not in the sheet (entered or changed after the "
+            "export) and stay open; export again and settle them separately:"
+        )
+        for e in missing:
+            print(f"    {e.review_id}  {e.group}  {e.kind}  {e.points} pts")
 
     transfers, missing = [], []
     for p in payees:
