@@ -54,6 +54,20 @@ class Keys:
         return f"submissions/{sid}/agent_trace.jsonl"
 
     @staticmethod
+    def fingerprint(sid: str) -> str:
+        return f"submissions/{sid}/fingerprint.json"
+
+    # A published review's own copy of its media, transcript and fingerprint. Everything under
+    # submissions/ expires after 30 days; reviews/ is kept while the review is published.
+    @staticmethod
+    def review_prefix(review_id: str) -> str:
+        return f"reviews/{review_id}/"
+
+    @staticmethod
+    def review_copy(review_id: str, submission_key: str) -> str:
+        return f"reviews/{review_id}/{submission_key.split('/', 2)[-1]}"
+
+    @staticmethod
     def summary_history(business_id: str, ts: str) -> str:
         safe = business_id.replace("/", "_")
         return f"businesses/{safe}/summary_history/{ts}.json"
@@ -62,6 +76,14 @@ class Keys:
     @staticmethod
     def social_slide(run_id: str, index: int) -> str:
         return f"social/weekly/{run_id}/slide-{index:02d}.jpg"
+
+    @staticmethod
+    def social_review_reel(run_id: str, review_id: str) -> str:
+        return f"social/weekly/{run_id}/reels/{review_id}.mp4"
+
+    @staticmethod
+    def social_review_reel_cover(run_id: str, review_id: str) -> str:
+        return f"social/weekly/{run_id}/reels/{review_id}-cover.jpg"
 
     @staticmethod
     def social_record(run_id: str) -> str:
@@ -105,9 +127,23 @@ def append_jsonl(line: dict, key: str) -> None:
     )
 
 
+def copy(src_key: str, dst_key: str) -> str:
+    bucket = get_settings().media_bucket
+    _client().copy_object(Bucket=bucket, Key=dst_key, CopySource={"Bucket": bucket, "Key": src_key})
+    return dst_key
+
+
 def get_json(key: str):
     body = _client().get_object(Bucket=get_settings().media_bucket, Key=key)["Body"].read()
     return json.loads(body)
+
+
+def get_json_or_none(key: str):
+    """``get_json``, or None when the object does not exist. Other errors propagate."""
+    try:
+        return get_json(key)
+    except _client().exceptions.NoSuchKey:
+        return None
 
 
 def download_file(key: str, path: Path) -> Path:

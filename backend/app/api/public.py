@@ -14,9 +14,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import RedirectResponse
 
+from app.agent import places
 from app.agent.places import get_place_details, search_places
 from app.agent.summary import summarize_google_reviews
 from app.config import get_settings
+from app.credit import credit
 from app.models import CATEGORIES, Business, Review
 from app.seo.model import country_name, score
 from app.seo.slugs import business_path, business_slug, is_demo, slugify
@@ -104,8 +106,7 @@ def business_payload(b: Business) -> dict:
                 "reel_url": r.reel_url,
                 "reel_shortcode": r.reel_shortcode,
                 "audio_url": audio_url(r),
-                "reviewer_display_name": r.reviewer_display_name,
-                "reviewer_country": r.reviewer_country,
+                **_credit(r),
                 "extraction": r.extraction.model_dump(
                     exclude={"business", "confidence"}, exclude_none=True
                 ),
@@ -200,6 +201,16 @@ def top(
     return {"where": where, "results": top_businesses(country, city, category, limit)}
 
 
+def _credit(r: Review) -> dict:
+    c = credit(r)
+    return {
+        "reviewer_display_name": c.name,
+        "reviewer_country": c.country,
+        "reel_author": c.handle,
+        "shared_by": c.shared_by,
+    }
+
+
 def audio_url(r: Review) -> str | None:
     """Stable URL for a voice review's audio; the endpoint below redirects to a fresh S3 URL."""
     if r.source != "voice" or not r.audio_s3_key:
@@ -221,30 +232,9 @@ def review_audio(review_id: str):
 GOOGLE_ATTRIBUTION = "Reviews from Google"
 
 
-class _TokenBucket:
-    """Per-process burst guard on paid Google calls.
-
-    A daily quota set in Google Cloud console is the real cap."""
-
-    def __init__(self, rate_per_minute: int):
-        self.capacity = float(rate_per_minute)
-        self.tokens = float(rate_per_minute)
-        self.refill_per_s = rate_per_minute / 60.0
-        self.updated = time.monotonic()
-        self.lock = threading.Lock()
-
-    def take(self) -> bool:
-        with self.lock:
-            now = time.monotonic()
-            self.tokens = min(self.capacity, self.tokens + (now - self.updated) * self.refill_per_s)
-            self.updated = now
-            if self.tokens < 1:
-                return False
-            self.tokens -= 1
-            return True
-
-
-google_bucket = _TokenBucket(60)
+# One per-process burst guard on paid Google calls, shared with the WhatsApp discovery agent.
+google_bucket = places.google_bucket
+_TokenBucket = places.TokenBucket
 
 
 def _google_call[T](fn: Callable[[], T]) -> T:

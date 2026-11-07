@@ -395,3 +395,15 @@ def test_demo_businesses_never_become_pages(world):
     assert "Demo Spot" not in (w.root / "places/ng/lagos.html").read_text()
     site.publish_business_page("afefe:demo-x", writer=w)
     assert not any("demo-spot" in k for k in w.list("b/"))
+
+
+def test_shared_reel_is_credited_to_its_instagram_poster():
+    """Same rule as the API (app/credit.py): an unverified reel names its poster, not the
+    sender, and carries no flag from the sender's number."""
+    r = review("r2")
+    r.ig_username = "tolu.eats"
+    r.ig_author_verified = False
+    out = render.render_business(page(reviews=[r]))
+    assert "<strong>@tolu.eats</strong>" in out.html and "🇳🇬" not in out.html
+    assert node(jsonld(out.html), "Restaurant")["review"][0]["author"]["name"] == "@tolu.eats"
+    assert "### @tolu.eats," in out.md

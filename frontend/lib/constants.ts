@@ -78,8 +78,26 @@ export function languageName(code: string): string {
 export const WHATSAPP_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "+234 803 174 9669";
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || "";
 
-/** Reviewer rewards. Mirrors backend `points_per_review`; the gift card itself is handed out manually for now. */
+/**
+ * Launch switch for the Nigeria payout programme, set at build time together with the backend's
+ * PAYOUTS_ENABLED. Off: the site shows the Terms and rewards card in force today.
+ */
+export const PAYOUTS_ENABLED = process.env.NEXT_PUBLIC_PAYOUTS_ENABLED === "true";
+
+/** The scheme in force before the payout launch (a flat reward per published review), stated on the "coming soon" card. Remove at launch. */
 export const POINTS_PER_REVIEW = 10;
-export const WEEKLY_REVIEW_LIMIT = 3;
 export const REWARD_POINTS = 100;
 export const REWARD_LABEL = "$10 Amazon gift card";
+
+/** Reviewer payouts (Nigeria only). Mirrors backend `app/rewards/rules.py` and the payout settings in `config.py`. */
+/** A reel someone else posted can still be published, but never earns points. */
+export const POINTS = { voice: 5, reelOther: 0, reelAuthor: 10 } as const;
+export const NGN_PER_POINT = 1_000;
+export const WEEKLY_REVIEW_LIMIT = 3;
+/** Monthly pool per category group, in naira. If approved points exceed a pool, that group is paid pro rata. */
+export const PAYOUT_POOLS: { group: string; covers: string; ngn: number }[] = [
+  { group: "Shortlets", covers: "Shortlet apartments", ngn: 1_000_000 },
+  { group: "Restaurants", covers: "Restaurants, street food, cafés", ngn: 1_000_000 },
+  { group: "Hotels", covers: "Hotels", ngn: 1_000_000 },
+  { group: "Everything else", covers: "All other categories", ngn: 500_000 },
+];

@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.credit import credit
 from app.models import Business, BusinessSummary, Review
 from app.seo.slugs import (
     business_path,
@@ -62,6 +63,22 @@ def human_date(iso: str | None) -> str:
     except ValueError:
         return ""
     return f"{d.day} {d.strftime('%b %Y')}"
+
+
+def reviewer_name(r: Review) -> str:
+    """Who the review is credited to (app/credit.py): the reviewer, or the Instagram account
+    that posted a reel someone else shared."""
+    c = credit(r)
+    if c.name:
+        return c.name
+    if c.handle:
+        return f"@{c.handle}"
+    return "Afefehub reviewer"
+
+
+def reviewer_flag_country(r: Review) -> str | None:
+    """The flag is the credited reviewer's; a shared reel shows none."""
+    return credit(r).country
 
 
 def score(b: Business) -> float:

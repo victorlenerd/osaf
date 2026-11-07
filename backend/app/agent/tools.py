@@ -256,3 +256,112 @@ REJECT_REVIEW = {
 
 ALL_TOOLS = [SEARCH_PLACES, ASK_USER, FINALIZE_REVIEW, REJECT_REVIEW]
 TOOLS_NO_ASK = [SEARCH_PLACES, FINALIZE_REVIEW, REJECT_REVIEW]
+
+
+# ------------------------------------------------------------------ vendor discovery agent
+SEARCH_VENDORS = {
+    "type": "function",
+    "function": {
+        "name": "search_vendors",
+        "description": (
+            "Search businesses reviewed on Afefehub. `query` is what the person wants: a dish, "
+            "product, service or business name (e.g. 'suya', 'barber', 'Mama Cass'). Put the "
+            "area or city in `city`, not in `query`. Pass `near` only when the person shared a "
+            "location or asked for something close to them. Returns up to `limit` vendors with "
+            "an Afefehub `url`; an empty list means nothing matched, so try a broader query "
+            "(drop the area, use a more general word) before giving up."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "category": {"type": "string", "enum": CATEGORIES},
+                "city": {
+                    "type": "string",
+                    "description": "City or area, e.g. 'Lagos', 'Lekki', 'Wuse 2', 'East Legon'",
+                },
+                "country": {"type": "string", "description": "ISO-3166 alpha-2, e.g. NG"},
+                "near": {
+                    "type": "object",
+                    "properties": {
+                        "lat": {"type": "number"},
+                        "lng": {"type": "number"},
+                        "radius_km": {"type": "number"},
+                    },
+                    "required": ["lat", "lng"],
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 5},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+GET_VENDOR = {
+    "type": "function",
+    "function": {
+        "name": "get_vendor",
+        "description": (
+            "Details of one Afefehub business: what reviewers praise and complain about, standout "
+            "items, recommend rate, and the good/improve points of its latest reviews. Use it for "
+            "follow-ups such as 'tell me more about 2' or 'is it expensive?'. Only pass a "
+            "business_id from search_vendors or from the options shown earlier."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"business_id": {"type": "string"}},
+            "required": ["business_id"],
+        },
+    },
+}
+
+SEARCH_GOOGLE = {
+    "type": "function",
+    "function": {
+        "name": "search_google",
+        "description": (
+            "Look the request up on Google Places. Only allowed after search_vendors found "
+            "nothing this turn. Results are NOT reviewed on Afefehub: say so, and invite the "
+            "person to send a voice note reviewing one if they have been there."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What and where, e.g. 'suya spot Lekki Lagos'",
+                },
+                "region_code": {"type": "string", "description": "ISO-3166 alpha-2, e.g. NG"},
+            },
+            "required": ["query", "region_code"],
+        },
+    },
+}
+
+REPLY = {
+    "type": "function",
+    "function": {
+        "name": "reply",
+        "description": (
+            "Send your WhatsApp reply and end the turn. List vendors as a numbered list in "
+            "`message`, and give their ids in the same order in `options` so the person can "
+            "answer with a number next time. Leave `options` empty when the reply lists no "
+            "vendors (a follow-up answer about one vendor, a clarifying question, an intro)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "maxLength": 1200},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "business_id or Google place_id of each numbered vendor",
+                },
+            },
+            "required": ["message"],
+        },
+    },
+}
+
+DISCOVERY_TOOLS = [SEARCH_VENDORS, GET_VENDOR, SEARCH_GOOGLE, REPLY]
+DISCOVERY_TOOLS_NO_GOOGLE = [SEARCH_VENDORS, GET_VENDOR, REPLY]

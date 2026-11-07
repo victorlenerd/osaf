@@ -80,10 +80,54 @@ class Settings(BaseSettings):
     reply_window_seconds: int = 6 * 3600
     max_voice_reply_seconds: int = 30
     weekly_review_limit: int = 3  # published reviews per reviewer in any rolling 7 days
-    points_per_review: int = 10  # flat reward per published review
+    points_per_review: int = 10  # legacy flat reward; superseded by the payout tiers below
+
+    # Launch switch for the Nigeria payout programme. Off: reviewers keep the current scheme
+    # (points_per_review on every published review, "points" shows that balance) and no
+    # ENTER offer, VERIFY or bank-details flow runs. Duplicate detection, bans, crediting
+    # reels to their poster and media retention run either way. Turn on (PAYOUTS_ENABLED=true)
+    # on launch day, together with the site's NEXT_PUBLIC_PAYOUTS_ENABLED.
+    payouts_enabled: bool = False
+
+    # Monthly payouts (app/rewards). Points per entered review, by kind; 1 point is worth up to
+    # ngn_per_point naira, paid from a monthly pool per category group (pro rata when a
+    # group's approved points are worth more than its pool). Nigeria only.
+    points_voice: int = 5
+    points_reel_author: int = 10  # a reel verified as posted by the submitter
+    # A reel earns nothing until the submitter proves they posted it (a reel someone else
+    # posted never earns points).
+    ngn_per_point: int = 1000
+    pool_shortlets_ngn: int = 1_000_000
+    pool_restaurants_ngn: int = 1_000_000
+    pool_hotels_ngn: int = 1_000_000
+    pool_others_ngn: int = 500_000
+    payout_country: str = "NG"
+    payout_offer_days: int = 7  # how long a published review can still be ENTERed
+    ig_code_days: int = 7  # how long an author-verification code stays valid
+    afefehub_ig_handle: str = "afefehub"
+    # Instagram messaging webhook (author verification DMs). Same Meta app secret signs it.
+    ig_verify_token: str = ""
+    # WhatsApp message templates for messages sent outside the 24 h service window.
+    wa_template_payout_sent: str = "payout_sent"
+    wa_template_language: str = "en"
+
+    # Duplicate detection (app/fingerprint). Scores are 0..1. A duplicate is rejected; a
+    # similar review publishes but earns no points.
+    fingerprint_index: str = "fingerprints"
+    dup_audio_threshold: float = 0.7
+    dup_video_threshold: float = 0.8
+    similar_audio_threshold: float = 0.4
+    similar_video_threshold: float = 0.5
+    similar_text_threshold: float = 0.6
     # Reels longer or larger than this are refused before download (disk and model cost cap).
     max_reel_seconds: int = 900
     max_reel_bytes: int = 500 * 1024 * 1024
+    # Vendor discovery over WhatsApp: how long a search chat (and a shared location pin) is
+    # remembered, how many agent turns one number gets per day, and whether the agent may
+    # suggest unreviewed Google Places when Afefehub has no match.
+    discovery_session_seconds: int = 1800
+    discovery_daily_limit: int = 40
+    discovery_google_fallback: bool = True
     # Secret key for the reviewer phone hash (HMAC). Required in prod; see app/pii.py.
     phone_hash_salt: str = ""
     work_dir: str = "/tmp/afefehub"

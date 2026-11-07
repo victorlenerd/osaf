@@ -16,18 +16,25 @@ from pathlib import Path
 
 from ulid import ULID
 
+from app.agent import discover
 from app.agent.extract import ExtractionOutcome, run_extraction_turn
 from app.agent.places import country_from_phone
 from app.config import get_settings
+from app.fingerprint import check as fpcheck
+from app.fingerprint import media as fpmedia
+from app.fingerprint import text as fptext
 from app.models import (
     QA,
     TERMINAL_STATES,
     TRANSIENT_STATES,
     Conversation,
+    Fingerprint,
+    SharedLocation,
     Submission,
     SubmissionState,
     now_iso,
 )
+from app.moderation import bans
 from app.pii import phone_label
 from app.pipeline import erase, publish, quota
 from app.pipeline.download import (
@@ -35,6 +42,7 @@ from app.pipeline.download import (
     download_reel,
     extract_audio,
     extract_reel,
+    reel_metadata,
     transcode_for_sam,
 )
 from app.pipeline.facecheck import run_face_check
@@ -46,7 +54,8 @@ from app.pipeline.voice import (
     transcode_for_playback,
     transcribe_voice_note,
 )
-from app.store import dynamo, s3
+from app.rewards import flow as rewards
+from app.store import dynamo, opensearch, s3
 from app.whatsapp import client as wa
 
 log = logging.getLogger(__name__)
@@ -59,10 +68,20 @@ def help_text() -> str:
         "send me the link here. I'll watch it, find the business, and publish your review on "
         "afefehub.com so others can discover it.\n\nNo reel? Just send me a voice note about your "
         "visit: the business name, where it is, what was good and what could improve.\n\nTip: say "
-        f"the business name and area clearly.\n\nYou can publish up to {s.weekly_review_limit} "
-        f"reviews a week, and every published review earns {s.points_per_review} points. Text "
-        "*points* anytime to see your total, or *delete my data* to erase everything I hold "
-        "about you."
+        "the business name and area clearly.\n\nLooking for somewhere good? Just ask, e.g. "
+        "*best suya in Lekki* or *barber in Wuse 2*, or share your location 📍 and I'll "
+        "suggest places other customers recommend.\n\n"
+        f"You can publish up to {s.weekly_review_limit} reviews a week. "
+        + (
+            "Reviews of businesses in Nigeria can be entered for our monthly payout: "
+            f"{s.points_voice} pts for a voice note, {s.points_reel_author} for a reel you posted "
+            "yourself (reels someone else posted earn nothing). Text *points* anytime to see "
+            "your entries"
+            if s.payouts_enabled
+            else f"Every published review earns {s.points_per_review} points. Text *points* "
+            "anytime to see your total"
+        )
+        + ", or *delete my data* to erase everything I hold about you."
     )
 
 
@@ -72,6 +91,12 @@ CONFIRM_WORDS = re.compile(
 # A star rating sent while confirming: "4", "4 stars", "4/5", "⭐⭐⭐⭐".
 RATING_REPLY = re.compile(r"^\s*([1-5])\s*(stars?|⭐|/\s*5|out of 5)?\s*[.!]*\s*$", re.I)
 STAR_EMOJI_REPLY = re.compile(r"^\s*(⭐\ufe0f?){1,5}\s*$")
+# Greetings and help requests get the intro; any other free text is a vendor question.
+HELP_WORDS = re.compile(
+    r"^\s*(hi+|hello+|hey+|hiya|yo|good\s+(morning|afternoon|evening)|help|menu|start|info|"
+    r"how\s+does\s+(this|it)\s+work)\s*[?!.]*\s*$|^\s*[?!.]+\s*$",
+    re.I,
+)
 POINTS_WORDS = re.compile(r"^\s*(my\s+)?(points|balance|score)\s*[?!.]*\s*$", re.I)
 # "delete my data", "erase my reviews", "remove my account", "delete everything", "forget me"
 DELETE_WORDS = re.compile(
@@ -213,6 +238,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             wa.send_text(phone, body)
             return
 
+    # 0b. a banned number gets a short notice (at most daily) and nothing else; erasure above
+    #     still works for it
+    if bans.is_banned(phone):
+        if not conv.ban_notice_at or _seconds_since(conv.ban_notice_at) > BAN_NOTICE_SECONDS:
+            conv.ban_notice_at = now_iso()
+            dynamo.put_conversation(conv)
+            wa.send_text(phone, bans.BANNED_MSG)
+        return
+
     # 1. a new reel link always starts (or restarts) a submission
     if found:
         url, shortcode = found
@@ -237,10 +271,27 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         _run_pipeline(sub, conv)
         return
 
-    # 1b. "points": balance and slots, answered even mid-review so it never burns a clarification
+    # 1b. payouts: bank details we asked for, ENTER, VERIFY, "bank details", and "points".
+    #     Answered even mid-review so they never burn a clarification.
+    if mtype == "text" and get_settings().payouts_enabled:
+        if rewards.handle_details_reply(conv, text):
+            return
+        if rewards.ENTER_WORDS.match(text):
+            rewards.handle_enter(conv)
+            return
+        if rewards.VERIFY_WORDS.match(text):
+            rewards.handle_verify(conv)
+            return
+        if rewards.DETAILS_WORDS.match(text):
+            rewards.ask_payout_details(conv)
+            return
     if mtype == "text" and POINTS_WORDS.match(text):
         q = quota.weekly_quota(phone)
-        body = f"⭐ You have {dynamo.get_points(phone)} points.\n\n{quota.slots_line(q)}"
+        if get_settings().payouts_enabled:
+            balance = rewards.points_text(phone)
+        else:
+            balance = f"⭐ You have {dynamo.get_points(phone)} points."
+        body = f"{balance}\n\n{quota.slots_line(q)}"
         if active and active.pending_question:
             body += "\n\nYour current review is still waiting for your reply 🙂"
         wa.send_text(phone, body)
@@ -259,6 +310,11 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
         extract_audio(work / "source.mp4", work / "audio.wav")
         _set_state(active, SubmissionState.DOWNLOADING, "video supplied via WhatsApp")
         _run_pipeline(active, conv, skip_download=True)
+        return
+
+    # 2b. a location pin: remembered for nearby searches; re-runs the last search near it
+    if mtype == "location":
+        _handle_location(conv, msg.get("location") or {}, active)
         return
 
     # 3. a voice note: a short, prompt answer while we wait on the reviewer, otherwise a
@@ -311,7 +367,12 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             _start_voice_review(conv, voice_id)
             return
 
-    # 4. answers while a submission waits on the user
+    # 4. answers while a submission waits on the user. A typed message that asks for vendors
+    #    instead ("any good barber in Yaba?") is answered as a search and leaves the review
+    #    exactly where it was.
+    if active and text and not spoken and _wants_vendors(active, text):
+        _discover(conv, text, footer=_discovery_footer(active))
+        return
     if active and text:
         if active.state == SubmissionState.AWAITING_CLARIFICATION:
             active.qa_log.append(QA(q=active.pending_question or "", a=_as_logged(text, spoken)))
@@ -370,11 +431,16 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             if _is_stale(active):
                 wa.send_text(phone, "That one got stuck, resuming now…")
                 _run_pipeline(active, conv, skip_download=active.s3_video_key is not None)
+            elif mtype == "text" and not HELP_WORDS.match(text):
+                _discover(conv, text, footer=_discovery_footer(active))
             else:
                 wa.send_text(phone, "Still working on your last review, one moment… ⏳")
             return
 
-    # 5. anything else
+    # 5. a question for vendors, or the intro for greetings and anything else
+    if mtype == "text" and text.strip() and not HELP_WORDS.match(text):
+        _discover(conv, text)
+        return
     wa.send_text(phone, help_text())
 
 
@@ -385,6 +451,111 @@ def rating_from_reply(text: str) -> int | None:
     if STAR_EMOJI_REPLY.match(text):
         return text.count("⭐")
     return None
+
+
+# ---------------------------------------------------------------- vendor discovery
+DISCOVERY_LIMIT_MSG = (
+    "You've asked me a lot today 🙏 I can look up more places for you tomorrow. Meanwhile you "
+    "can search on {site}."
+)
+WAITING_FOOTER = "\n\n(Your review is still waiting for your reply to my last question about it 🙂)"
+PROCESSING_FOOTER = "\n\n(I'm still working on your review and will message you when it's ready ⏳)"
+
+
+def _discovery_footer(active: Submission | None) -> str | None:
+    if active is None:
+        return None
+    if active.state in TRANSIENT_STATES:
+        return PROCESSING_FOOTER
+    if active.state in (
+        SubmissionState.AWAITING_CLARIFICATION,
+        SubmissionState.CONFIRMING,
+        SubmissionState.AWAITING_VIDEO,
+    ):
+        return WAITING_FOOTER
+    return None
+
+
+def _wants_vendors(active: Submission, text: str) -> bool:
+    """While a review waits on the reviewer, is this typed message a vendor question rather
+    than the answer? Obvious answers never reach the model; any doubt keeps the old reading."""
+    if active.state in (SubmissionState.AWAITING_CLARIFICATION, SubmissionState.CONFIRMING):
+        if CONFIRM_WORDS.match(text) or discover.obviously_an_answer(text):
+            return False
+        if active.state == SubmissionState.CONFIRMING and rating_from_reply(text):
+            return False  # "2 out of 5" is a star rating, never a vendor question
+        return discover.classify_intent(text, active.pending_question) == "discover"
+    if active.state == SubmissionState.AWAITING_VIDEO:
+        # Nothing typed answers "send the video file", so only greetings get the nudge.
+        if HELP_WORDS.match(text) or CONFIRM_WORDS.match(text):
+            return False
+        return (
+            discover.classify_intent(text, "Please send the video file of your reel.") == "discover"
+        )
+    return False
+
+
+def _discover(
+    conv: Conversation,
+    text: str,
+    *,
+    footer: str | None = None,
+    remember_as: str | None = None,
+) -> None:
+    """Answer a vendor question and remember the chat on the conversation. `remember_as` is the
+    request to keep for a later location re-run when `text` is a wrapper around it."""
+    phone = conv.phone
+    if not _models_ready():
+        # No agent without the model key: a plain search still beats the intro text.
+        try:
+            hits = opensearch.search(remember_as or text, country=conv.profile_country, limit=3)
+        except Exception:  # noqa: BLE001
+            log.exception("discovery fallback search failed")
+            hits = []
+        wa.send_text(phone, discover.format_results(hits) + (footer or ""))
+        return
+    if dynamo.incr_discovery_count(phone) > get_settings().discovery_daily_limit:
+        site = get_settings().public_site_url.removeprefix("https://")
+        wa.send_text(phone, DISCOVERY_LIMIT_MSG.format(site=site) + (footer or ""))
+        return
+    outcome = discover.run_discovery_turn(conv, text, remember_as=remember_as)
+    log.info(
+        "discovery for %s: steps=%s searched=%s options=%d",
+        phone_label(phone),
+        [t["tool_calls"] for t in outcome.trace],
+        outcome.searched,
+        len(outcome.session.shown),
+    )
+    conv.discovery = outcome.session
+    dynamo.put_conversation(conv)
+    wa.send_text(phone, outcome.message + (footer or ""), preview_url=False)
+
+
+def _handle_location(conv: Conversation, loc: dict, active: Submission | None) -> None:
+    try:
+        lat, lng = float(loc["latitude"]), float(loc["longitude"])
+    except (KeyError, TypeError, ValueError):
+        wa.send_text(conv.phone, "I couldn't read that location. Could you share it again?")
+        return
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        wa.send_text(conv.phone, "I couldn't read that location. Could you share it again?")
+        return
+    conv.last_location = SharedLocation(lat=lat, lng=lng)
+    dynamo.put_conversation(conv)
+    session = discover.live_session(conv)
+    if session and session.last_query:
+        _discover(
+            conv,
+            f"I just shared my location. Same request, near me: {session.last_query}",
+            footer=_discovery_footer(active),
+            remember_as=session.last_query,
+        )
+        return
+    wa.send_text(
+        conv.phone,
+        "Got your location 📍 What are you looking for nearby? e.g. *suya*, *barber*, "
+        "*pharmacy*, *phone repair*",
+    )
 
 
 # ----------------------------------------------------------------- erasure
@@ -407,6 +578,7 @@ def _erasure_in_progress(conv: Conversation) -> bool:
 
 
 ERASURE_MAX_SECONDS = 15 * 60
+BAN_NOTICE_SECONDS = 24 * 3600
 ERASING_MSG = (
     "Your data deletion is in progress, hang on a moment… I'll confirm here when it's done."
 )
@@ -440,13 +612,24 @@ def _ask_to_confirm_deletion(conv: Conversation, active: Submission | None) -> N
         conv.phone,
         "⚠️ This will permanently erase everything Afefehub holds about this number: "
         f"{reviews}{extra}, our stored copies of your videos, voice notes and transcripts, "
-        f"your chat history and your {p.points} points. Your reviews disappear from "
-        "afefehub.com right away. This cannot be undone.\n\n"
+        + (
+            f"your chat history, {_entries_phrase(p)} and your bank details. Your reviews "
+            "disappear from afefehub.com right away, and anything not yet paid is forfeited. "
+            if get_settings().payouts_enabled
+            else f"your chat history and your {p.points} points. Your reviews disappear from "
+            "afefehub.com right away. "
+        )
+        + "This cannot be undone.\n\n"
         f"Reply *DELETE* (in capitals) within {DELETE_WINDOW_SECONDS // 60} minutes to "
         "confirm. Reply anything else, or nothing, to keep your data.\n\n"
         "Only want one review taken down? Don't confirm; email privacy@afefehub.com with the "
         "business name instead.",
     )
+
+
+def _entries_phrase(p: erase.ErasurePreview) -> str:
+    n = p.entries
+    return f"your {n} payout entr{'ies' if n != 1 else 'y'}" if n else "your payout entries"
 
 
 def _handle_delete_confirmation(conv: Conversation, active: Submission | None) -> None:
@@ -609,13 +792,34 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
                     )
                     return
                 video, audio = dl.video_path, dl.audio_path
+                sub.ig_username = dl.meta.username
+                sub.ig_uploader_id = dl.meta.uploader_id
+                sub.ig_posted_at = dl.meta.posted_at
             else:
                 video, audio = work / "source.mp4", work / "audio.wav"
                 if not video.exists() and sub.s3_video_key:
                     s3.download_file(sub.s3_video_key, video)
                     extract_audio(video, audio)
+                _fill_reel_owner(sub, work)
+            if bans.ig_account_banned(sub.ig_username):
+                _set_state(sub, SubmissionState.REJECTED, "reel from a banned account")
+                wa.send_text(
+                    sub.phone, "Reels from that Instagram account can't be published on Afefehub."
+                )
+                return
             sub.s3_video_key = s3.upload_file(video, s3.Keys.video(sid), "video/mp4")
             sub.s3_audio_key = s3.upload_file(audio, s3.Keys.audio(sid), "audio/wav")
+
+        # Duplicates are caught on the media before any model is paid to listen to them.
+        source = video if video is not None else work / "voice.ogg"
+        fp = Fingerprint(
+            sha256=fpmedia.sha256_file(source),
+            audio=fpmedia.audio_fingerprint(audio),
+            video=fpmedia.video_fingerprint(video) if video is not None else [],
+        )
+        sub.media_sha256 = fp.sha256
+        if _rejected_as_duplicate(sub, fpcheck.check(fp)):
+            return
 
         if not _models_ready():
             _set_state(sub, SubmissionState.PAUSED, "model API key not configured")
@@ -645,6 +849,14 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
                 )
             return
 
+        fp.text = fptext.minhash(transcript.text)
+        sub.s3_fingerprint_key = s3.put_json(fp.model_dump(), s3.Keys.fingerprint(sid))
+        verdict = fpcheck.check(fp)
+        if _rejected_as_duplicate(sub, verdict):
+            return
+        sub.similarity_checked = verdict.checked
+        sub.similarity = verdict.similar
+
         if sub.kind == "reel":
             assert video is not None
             _set_state(sub, SubmissionState.VERIFYING)
@@ -670,6 +882,34 @@ def _run_pipeline(sub: Submission, conv: Conversation, *, skip_download: bool = 
         _extract_and_route(sub, conv, latest_answer=None)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _fill_reel_owner(sub: Submission, work: Path) -> None:
+    """The reel's video did not come from our Instagram download (the reviewer sent the file
+    on WhatsApp, or a stage is resuming), so we have not yet learnt who posted it. Ask for the
+    link's metadata alone, so the author check and banned-account check still work. When
+    Instagram refuses that too, the reel publishes without a known poster (and cannot earn)."""
+    if sub.ig_username or not sub.reel_url:
+        return
+    try:
+        meta = reel_metadata(sub.reel_url, work / "meta")
+    except DownloadError as e:
+        log.info("poster of %s unknown: %s", sub.submission_id, str(e)[:120])
+        return
+    sub.ig_username = meta.username
+    sub.ig_uploader_id = meta.uploader_id
+    sub.ig_posted_at = meta.posted_at
+
+
+def _rejected_as_duplicate(sub: Submission, verdict: fpcheck.Verdict) -> bool:
+    """Reject (and tell the reviewer) when the media is already published on Afefehub."""
+    if verdict.duplicate is None:
+        return False
+    _set_state(sub, SubmissionState.REJECTED, f"duplicate of review {verdict.duplicate.review_id}")
+    what = "voice note" if sub.kind == "voice" else "reel"
+    message = publish.PENDING_DUPLICATE_MSG if verdict.duplicate.pending else publish.DUPLICATE_MSG
+    wa.send_text(sub.phone, message.format(what=what))
+    return True
 
 
 def _ingest_voice(sub: Submission, work: Path) -> Path | None:

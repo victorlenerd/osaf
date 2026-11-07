@@ -119,7 +119,8 @@ def get_business(business: str) -> dict:
             {
                 "date": r["created_at"][:10],
                 "kind": "video" if r["source"] == "reel" else "voice note",
-                "reviewer": r["reviewer_display_name"] or "Afefehub reviewer",
+                "reviewer": r["reviewer_display_name"]
+                or (f"@{r['reel_author']}" if r.get("reel_author") else "Afefehub reviewer"),
                 "recommend": r["extraction"].get("recommend"),
                 "rating": r["extraction"].get("rating"),
                 "summary": r["extraction"].get("one_line_summary"),

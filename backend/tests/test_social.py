@@ -621,3 +621,314 @@ def test_permalink_failure_after_publish_is_tolerated():
     respx.post(f"{G}/1789/media_publish").mock(return_value=httpx.Response(200, json={"id": "m1"}))
     respx.get(f"{G}/m1").mock(return_value=httpx.Response(500, text="oops"))
     assert ig.publish_carousel(_client(), ["u1", "u2"], "c", sleep=lambda s: None) == ("m1", "")
+
+
+@respx.mock
+def test_publish_reel_sends_one_reels_container_then_publishes():
+    media = respx.post(f"{G}/1789/media").mock(return_value=httpx.Response(200, json={"id": "rc"}))
+    respx.get(f"{G}/rc").mock(
+        side_effect=[
+            httpx.Response(200, json={"status_code": "IN_PROGRESS"}),
+            httpx.Response(200, json={"status_code": "FINISHED"}),
+        ]
+    )
+    pub = respx.post(f"{G}/1789/media_publish").mock(
+        return_value=httpx.Response(200, json={"id": "m7"})
+    )
+    respx.get(f"{G}/m7").mock(
+        return_value=httpx.Response(200, json={"permalink": "https://www.instagram.com/reel/R/"})
+    )
+    slept: list[float] = []
+    out = ig.publish_reel(
+        _client(), "https://s3/reel.mp4", "Week", cover_url="https://s3/c.jpg", sleep=slept.append
+    )
+    assert out == ("m7", "https://www.instagram.com/reel/R/")
+    body = dict(httpx.QueryParams(media.calls.last.request.content.decode()))
+    assert body == {
+        "media_type": "REELS",
+        "video_url": "https://s3/reel.mp4",
+        "caption": "Week",
+        "share_to_feed": "true",
+        "cover_url": "https://s3/c.jpg",
+    }
+    assert len(media.calls) == 1 and slept == [10]
+    assert dict(httpx.QueryParams(pub.calls.last.request.content.decode())) == {"creation_id": "rc"}
+
+
+# --------------------------------------------------------------------- reel
+import math  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import wave  # noqa: E402
+from array import array  # noqa: E402
+
+from app.social import audio as au  # noqa: E402
+from app.social import reel as rl  # noqa: E402
+
+needs_ffmpeg = pytest.mark.skipif(
+    not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="ffmpeg not installed"
+)
+
+
+def test_candidate_knows_where_the_audio_is():
+    r = review()
+    r.audio_s3_key = "submissions/sub-r1/voice.m4a"
+    c = to_candidate(r)
+    assert c.submission_id == "sub-r1"
+    assert au.s3_audio_keys(c) == [
+        "submissions/sub-r1/voice.m4a",
+        "submissions/sub-r1/audio.wav",
+        "submissions/sub-r1/voice.ogg",
+    ]
+    c.audio_s3_key, c.video_s3_key = None, "submissions/sub-r1/source.mp4"
+    assert au.s3_audio_keys(c)[0] == "submissions/sub-r1/source.mp4"
+
+
+def _tone(seconds: float, gaps: tuple[tuple[float, float], ...] = ()) -> bytes:
+    n = int(seconds * au.RATE)
+    s = array("h", (int(12_000 * math.sin(2 * math.pi * 220 * i / au.RATE)) for i in range(n)))
+    for a, b in gaps:
+        for i in range(int(a * au.RATE), int(b * au.RATE)):
+            s[i] = 0
+    return s.tobytes()
+
+
+def test_peaks_shape_and_silence():
+    lv = au.peaks(_tone(2.0, gaps=((0.5, 1.0),)), 40)
+    assert len(lv) == 40 and max(lv) == pytest.approx(1.0) and min(lv) >= 0
+    assert all(v == 0 for v in lv[11:19]) and all(v > 0.9 for v in lv[:9])
+    assert au.peaks(bytes(1000), 10) == [0.0] * 10
+    assert au.peaks(b"", 5) == [0.0] * 5
+
+
+def test_review_scene_waveform_fills_as_it_plays():
+    w = window_from_dates("2026-10-20", "2026-10-27")
+    base = rl.render_reel_card(_cand(1, "Proper amala."), w, flag=None, site_url="afefehub.com")
+    assert base.size == (rl.RW, rl.RH)
+    clip = au.Clip("r1", 0, 2000, _tone(2.0))
+    sc = rl.ReviewScene(base, clip)
+    mid_y = rl.WAVE_Y + rl.WAVE_H // 2
+    first_bar_x = sc.x0 + rl.BAR_W // 2
+    last_bar_x = sc.x0 + (sc.n_bars - 1) * (rl.BAR_W + rl.BAR_GAP) + rl.BAR_W // 2
+    start, end = sc.frame(0.0), sc.frame(2.0)
+
+    def dark(img, x):
+        return max(img.getpixel((x, mid_y))) < 40  # ink, not the unplayed grey
+
+    assert not dark(start, first_bar_x)  # nothing played yet
+    assert dark(end, first_bar_x) and dark(end, last_bar_x)  # all played at the end
+    assert rl.timecode(65.9) == "01:05"
+
+
+def _wav(path, seconds: float, gaps=((1.0, 1.5),)):
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1), f.setsampwidth(2), f.setframerate(au.RATE)
+        f.writeframes(_tone(seconds, gaps=gaps))
+    return path
+
+
+@needs_ffmpeg
+def test_make_clip_keeps_the_whole_recording_and_caps_only_past_the_limit(tmp_path):
+    c1, c2 = _cand(1, "Proper Surulere amala worth the queue."), _cand(2, "Fine coffee.")
+    _wav(tmp_path / "r1.wav", 4.0)
+    a, whole = au.first_clip("r1", au.local_sources(c1, tmp_path))
+    assert abs(a.duration_ms - 4000) < 50
+    assert list(au.local_sources(c2, tmp_path)) == []
+    assert (whole.start_ms, whole.end_ms) == (0, a.duration_ms)
+    assert abs(whole.duration_s - 4.0) < 0.05
+    capped = au.make_clip(a, max_s=2.5)
+    assert capped.end_ms == 2500 and abs(capped.duration_s - 2.5) < 0.05
+    _wav(tmp_path / "r2.wav", 0.4, gaps=())
+    with pytest.raises(au.ReviewAudioError, match="too short"):
+        au.first_clip("r2", au.local_sources(c2, tmp_path))
+
+
+@needs_ffmpeg
+def test_first_clip_falls_through_an_unreadable_source(tmp_path):
+    (tmp_path / "r1.m4a").write_bytes(b"not audio at all")  # tried first, fails to probe
+    _wav(tmp_path / "r1.wav", 2.0)
+    src, clip = au.first_clip("r1", au.local_sources(_cand(1, "x" * 30), tmp_path))
+    assert src.path.name == "r1.wav" and abs(clip.duration_s - 2.0) < 0.05
+    with pytest.raises(au.ReviewAudioError, match="no audio found"):
+        au.first_clip("r9", iter(()))
+    with pytest.raises(au.ReviewAudioError, match=r"r1\.m4a"):
+        au.first_clip("r1", [tmp_path / "r1.m4a"])
+
+
+def test_s3_sources_skips_missing_keys_and_is_lazy(monkeypatch, tmp_path):
+    from botocore.exceptions import ClientError
+
+    from app.store import s3
+
+    c = _cand(1, "x" * 30)
+    c.submission_id, c.audio_s3_key = "sub1", "submissions/sub1/voice.m4a"
+    tried: list[str] = []
+
+    def download(key, dest):
+        tried.append(key)
+        if key.endswith(".m4a"):
+            raise ClientError({"Error": {"Code": "404"}}, "GetObject")
+        dest.write_bytes(b"x")
+        return dest
+
+    monkeypatch.setattr(s3, "download_file", download)
+    it = au.s3_sources(c, tmp_path)
+    assert next(it).name == "r1.wav"  # m4a missing, the transcription WAV next
+    assert tried == ["submissions/sub1/voice.m4a", "submissions/sub1/audio.wav"]
+    assert next(it).name == "r1.ogg"  # only fetched when the WAV is not good enough
+
+
+@needs_ffmpeg
+def test_render_review_reel_end_to_end(tmp_path):
+    c1 = _cand(1, "Proper Surulere amala worth the queue.")
+    _wav(tmp_path / "r1.wav", 4.0)
+    _, clip = au.first_clip("r1", au.local_sources(c1, tmp_path))
+    w = window_from_dates("2026-10-20", "2026-10-27")
+    res = rl.render_review_reel(c1, clip, w, tmp_path / "out", flag_fetch=False)
+    want = clip.duration_s + rl.TAIL_S + rl.CTA_S
+    assert abs(res.duration_s - want) < 0.1
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries",
+         "stream=codec_type,codec_name,width,height,sample_rate:format=duration",
+         "-of", "json", str(res.video)],
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    info = json.loads(probe.stdout)
+    streams = {s["codec_type"]: s for s in info["streams"]}
+    assert streams["video"]["codec_name"] == "h264"
+    assert (streams["video"]["width"], streams["video"]["height"]) == (1080, 1920)
+    assert streams["audio"]["codec_name"] == "aac" and streams["audio"]["sample_rate"] == "48000"
+    assert abs(float(info["format"]["duration"]) - want) < 0.15
+    with Image.open(res.cover) as im:  # the card itself is the cover, not a separate title card
+        assert im.size == (1080, 1920) and im.format == "JPEG"
+        assert im.getpixel((rl.RW // 2, rl.INNER_TOP + 300))[:3] == (255, 255, 255)
+    assert res.preview.exists()
+    with pytest.raises(ValueError):
+        rl.render_review_reel(c1, au.Clip("r1", 0, 0, b""), w, tmp_path / "bad")
+
+
+def test_review_caption_is_first_name_flag_and_the_review():
+    w = window_from_dates("2026-10-20", "2026-10-27")
+    c = to_candidate(review())
+    text = cap.build_review_caption(c, w, wa_number="+234 800 000 0000")
+    lines = text.splitlines()
+    assert lines[0] == "🇳🇬 Tola on Amala Corner Surulere, Lagos"
+    assert "“Proper Surulere amala worth the twenty-minute queue.”" in text
+    assert "+ Amala was soft and hot" in text
+    assert "Reviews of the week (20 to 26 Oct 2026)" in text
+    assert "+234 800 000 0000" in text and "#lagos" in text
+    assert "abc123" not in text and "Adeyemi" not in text  # no hash, no surname
+    cap.assert_caption_ok(text)
+    long = c.model_copy(update={"summary": "word " * 900, "good": ["x" * 300] * 3})
+    assert len(cap.build_review_caption(long, w)) <= cap.MAX_CAPTION_CHARS
+
+
+# ------------------------------------------------------------- publishing a week
+from pathlib import Path  # noqa: E402
+
+from app.social import weekly_publish as wp  # noqa: E402
+
+
+class FakeIG:
+    """Stands in for publish_carousel / publish_reel; fails the reels named in ``fail``."""
+
+    def __init__(self, fail=()):
+        self.fail, self.calls = set(fail), []
+
+    def carousel(self, client, urls, caption, **kw):
+        self.calls.append(("carousel", len(urls)))
+        return "car1", "https://ig/p/C/"
+
+    def reel(self, client, video_url, caption, *, cover_url="", **kw):
+        self.calls.append(("reel", video_url))
+        if any(f in video_url for f in self.fail):
+            raise ig.InstagramPublishError("boom")
+        return f"m-{video_url}", f"https://ig/reel/{video_url}/"
+
+
+def _jobs(tmp_path, *ids):
+    return [
+        wp.ReelJob(i, f"Biz {i}", tmp_path / f"{i}.mp4", tmp_path / f"{i}.jpg", f"cap {i}", 30.0)
+        for i in ids
+    ]
+
+
+def _run(monkeypatch, fake, record, reels, slides=("s1.jpg", "s2.jpg")):
+    monkeypatch.setattr(wp, "publish_carousel", fake.carousel)
+    monkeypatch.setattr(wp, "publish_reel", fake.reel)
+    saved: list[dict] = []
+    ok = wp.publish_week(
+        None, record, run_id="w1", slides=[Path(s) for s in slides], caption="c",
+        reels=reels, upload=lambda p, key, ct: key,
+        save=lambda r: saved.append(json.loads(json.dumps(r))),
+        say=lambda m: None,
+    )  # fmt: skip
+    return ok, saved
+
+
+def test_publish_week_posts_carousel_then_each_reel_and_records_each(monkeypatch, tmp_path):
+    fake = FakeIG()
+    rec = wp.new_record("w1", "afefehub")
+    ok, saved = _run(monkeypatch, fake, rec, _jobs(tmp_path, "r1", "r2"))
+    assert ok
+    assert fake.calls == [
+        ("carousel", 2),
+        ("reel", "social/weekly/w1/reels/r1.mp4"),
+        ("reel", "social/weekly/w1/reels/r2.mp4"),
+    ]
+    assert len(saved) == 3  # written after every post, not only at the end
+    assert saved[0]["carousel"]["media_id"] == "car1" and saved[0]["reels"] == []
+    assert [r["review_id"] for r in saved[-1]["reels"]] == ["r1", "r2"]
+
+
+def test_publish_week_carries_on_past_a_failed_reel_and_a_rerun_finishes(monkeypatch, tmp_path):
+    jobs = _jobs(tmp_path, "r1", "r2", "r3")
+    rec = wp.new_record("w1", "afefehub")
+    ok, _ = _run(monkeypatch, FakeIG(fail={"r2"}), rec, jobs)
+    assert not ok and [r["review_id"] for r in rec["reels"]] == ["r1", "r3"]
+
+    again = FakeIG()
+    rec2 = wp.new_record("w1", "afefehub", json.loads(json.dumps(rec)))
+    assert wp.pending(rec2, jobs) == (False, [jobs[1]])
+    ok, _ = _run(monkeypatch, again, rec2, jobs)
+    assert ok and again.calls == [("reel", "social/weekly/w1/reels/r2.mp4")]  # nothing twice
+    assert [r["review_id"] for r in rec2["reels"]] == ["r1", "r3", "r2"]
+
+
+def test_publish_week_stops_when_the_carousel_fails(monkeypatch, tmp_path):
+    def bad_carousel(*a, **kw):
+        raise ig.InstagramPublishError("nope")
+
+    fake = FakeIG()
+    monkeypatch.setattr(wp, "publish_carousel", bad_carousel)
+    monkeypatch.setattr(wp, "publish_reel", fake.reel)
+    rec = wp.new_record("w1", "afefehub")
+    ok = wp.publish_week(
+        None, rec, run_id="w1", slides=[Path("s1.jpg")], caption="c",
+        reels=_jobs(tmp_path, "r1"), upload=lambda p, k, ct: k, save=lambda r: None,
+        say=lambda m: None,
+    )  # fmt: skip
+    assert not ok and fake.calls == [] and rec["carousel"] is None
+
+
+def test_merge_records_counts_a_post_done_if_any_copy_lists_it(tmp_path):
+    local = wp.new_record("w1", "afefehub")
+    local["reels"] = [{"review_id": "r1", "media_id": "m1"}]
+    remote = wp.new_record("w1", "afefehub")
+    remote["carousel"] = {"media_id": "car"}
+    remote["reels"] = [{"review_id": "r1", "media_id": "m1"}, {"review_id": "r2", "media_id": "m2"}]
+    merged = wp.merge_records(local, remote)
+    assert merged["carousel"] == {"media_id": "car"}
+    assert [r["review_id"] for r in merged["reels"]] == ["r1", "r2"]
+    jobs = _jobs(tmp_path, "r1", "r2", "r3")
+    assert wp.pending(merged, jobs) == (False, [jobs[2]])
+    # a fresh machine with no local file still sees what S3 recorded
+    assert wp.pending(wp.merge_records(wp.new_record("w1", "a"), remote), jobs)[1] == [jobs[2]]
+
+
+def test_new_record_reads_older_single_post_records():
+    old_reel = {"media_id": "m1", "permalink": "p", "format": "reel", "run_id": "w1"}
+    rec = wp.new_record("w1", "afefehub", old_reel)
+    assert rec["carousel"] is None and rec["earlier"] == [old_reel]  # the round-up Reel test
+    old_car = {"media_id": "m2", "permalink": "p2", "published_at": "t", "slides": ["a"]}
+    assert wp.new_record("w1", "a", old_car)["carousel"]["media_id"] == "m2"

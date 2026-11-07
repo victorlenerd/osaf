@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.mcp_server import http_app as mcp_http_app
 from app.mcp_server import server as mcp_server
 from app.pii import RedactPhoneNumbers
+from app.rewards.webhook import router as instagram_router
 from app.whatsapp.webhook import router as whatsapp_router
 
 settings = get_settings()
@@ -47,11 +48,13 @@ for _handler in logging.getLogger().handlers:
 async def lifespan(app: FastAPI):
     if settings.opensearch_endpoint:
         try:
+            from app.fingerprint import index as fingerprint_index
             from app.store.opensearch import ensure_index
 
             ensure_index()
+            fingerprint_index.ensure_index()
         except Exception:  # noqa: BLE001
-            log.exception("could not ensure OpenSearch index at startup")
+            log.exception("could not ensure OpenSearch indexes at startup")
     async with mcp_server.session_manager.run():
         yield
 
@@ -66,6 +69,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(whatsapp_router)
+app.include_router(instagram_router)
 app.include_router(public_router)
 
 

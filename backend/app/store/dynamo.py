@@ -3,6 +3,7 @@
 PK / SK layout
   CONV#<phone>        META                       Conversation
   CONV#<phone>        POINTS                     reviewer reward balance {points, updated_at}
+  CONV#<phone>        DISCO#<YYYY-MM-DD>         vendor-discovery turns that day (TTL 2 days)
   SUB#<id>            META                       Submission   GSI1: CONV#<phone>/SUB#<created>
   WAMSG#<wamid>       META                       webhook dedupe (TTL 24h)
   REEL#<shortcode>    META                       one review per reel
@@ -15,6 +16,8 @@ PK / SK layout
                                                  are never stored)
   ERASURE#<ref>       META                       proof that a reviewer's data was erased
                                                  (keyed hash + counts, TTL 12 months)
+
+Payouts, bans and duplicate locks live in the same table; see app/store/rewards_store.py.
 """
 
 from __future__ import annotations
@@ -444,6 +447,22 @@ def add_points(phone: str, n: int) -> int:
     return int(r["Attributes"]["points"])
 
 
+def _discovery_day() -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+def incr_discovery_count(phone: str) -> int:
+    """Atomically count one vendor-discovery turn for this number today (UTC); returns the
+    new total. The item expires two days later, so nothing accumulates."""
+    r = _table().update_item(
+        Key={"PK": f"CONV#{phone}", "SK": f"DISCO#{_discovery_day()}"},
+        UpdateExpression="ADD turns :one SET expires_at = :exp",
+        ExpressionAttributeValues={":one": 1, ":exp": int(time.time()) + 2 * 86400},
+        ReturnValues="UPDATED_NEW",
+    )
+    return int(r["Attributes"]["turns"])
+
+
 def get_points(phone: str) -> int:
     r = _table().get_item(Key={"PK": f"CONV#{phone}", "SK": "POINTS"})
     return int(r["Item"].get("points", 0)) if "Item" in r else 0
@@ -453,6 +472,10 @@ def get_points(phone: str) -> int:
 def get_summary(business_id: str) -> BusinessSummary | None:
     r = _table().get_item(Key={"PK": f"BIZ#{business_id}", "SK": "SUMMARY"})
     return BusinessSummary(**_from_item(r["Item"])) if "Item" in r else None
+
+
+def delete_summary(business_id: str) -> None:
+    _table().delete_item(Key={"PK": f"BIZ#{business_id}", "SK": "SUMMARY"})
 
 
 def put_summary(business_id: str, s: BusinessSummary) -> None:
@@ -483,9 +506,18 @@ def _delete(pk: str, sk: str) -> None:
 
 
 def delete_conversation(phone: str) -> None:
-    """The conversation record and the points balance of one number."""
+    """The conversation record (with its discovery chat and location pin), the points balance
+    and the discovery counters of one number."""
     _delete(f"CONV#{phone}", "META")
     _delete(f"CONV#{phone}", "POINTS")
+    # Counters carry a TTL, but Dynamo deletes lazily, so list whatever is still there.
+    r = _table().query(
+        KeyConditionExpression="PK = :pk AND begins_with(SK, :disco)",
+        ExpressionAttributeValues={":pk": f"CONV#{phone}", ":disco": "DISCO#"},
+        ProjectionExpression="SK",
+    )
+    for item in r.get("Items", []):
+        _delete(f"CONV#{phone}", item["SK"])
 
 
 def delete_submission(submission_id: str) -> None:
@@ -504,13 +536,36 @@ def delete_review(r: Review) -> None:
     _delete(f"REVIEW#{r.review_id}", "META")
 
 
+def set_review_status(r: Review, status: str) -> None:
+    """Hide or unhide a review in place (moderation, bans)."""
+    _table().update_item(
+        Key={"PK": f"BIZ#{r.business_id}", "SK": f"REV#{r.created_at}#{r.review_id}"},
+        UpdateExpression="SET #st = :s",
+        ConditionExpression="attribute_exists(PK)",
+        ExpressionAttributeNames={"#st": "status"},
+        ExpressionAttributeValues={":s": status},
+    )
+
+
+def mark_author_verified(r: Review) -> None:
+    """The sender proved they posted this reel: credit it to them (app/credit.py)."""
+    _table().update_item(
+        Key={"PK": f"BIZ#{r.business_id}", "SK": f"REV#{r.created_at}#{r.review_id}"},
+        UpdateExpression="SET ig_author_verified = :t",
+        ConditionExpression="attribute_exists(PK)",
+        ExpressionAttributeValues={":t": True},
+    )
+
+
 def rebuild_business_counters(business_id: str) -> Business | None:
     """Recompute review_count, recommend_counts, rating totals, keywords and names_as_said from
-    the reviews still stored under the business. Returns None when no review is left (the
-    caller should then delete the business)."""
-    reviews = list_reviews(business_id, limit=1000)
-    if not reviews:
+    the published reviews still stored under the business. Returns None when no review of any
+    status is left (the caller should then delete the business); hidden reviews keep the
+    business but do not count."""
+    stored = list_reviews(business_id, limit=1000)
+    if not stored:
         return None
+    reviews = [r for r in stored if r.status == "published"]
     recommend = {"yes": 0, "no": 0, "maybe": 0}
     keywords: dict[str, int] = {}
     names: list[str] = []

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from app.config import get_settings
-from app.seo.model import BusinessPage, Hub, country_name
+from app.seo.model import BusinessPage, Hub, country_name, reviewer_name
 
 # Afefehub category -> the most specific schema.org LocalBusiness subtype.
 SCHEMA_TYPES: dict[str, str] = {
@@ -124,7 +124,7 @@ def business_graph(page: BusinessPage) -> dict:
         node: dict = {
             "@type": "Review",
             "@id": f"{url}#review-{r.review_id}",
-            "author": {"@type": "Person", "name": r.reviewer_display_name or "Afefehub reviewer"},
+            "author": {"@type": "Person", "name": reviewer_name(r)},
             "datePublished": r.created_at[:10],
             "reviewBody": review_body(ext),
             "publisher": {"@id": f"{site()}/#org"},

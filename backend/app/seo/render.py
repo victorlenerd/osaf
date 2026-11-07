@@ -20,6 +20,8 @@ from app.seo.model import (
     country_name,
     human_date,
     month_year,
+    reviewer_flag_country,
+    reviewer_name,
 )
 from app.seo.slugs import category_label, category_plural, hub_path
 from app.social.flags import flag_emoji
@@ -68,6 +70,8 @@ def env() -> Environment:
         category=category_label,
         pct=pct,
         plural=plural,
+        who=reviewer_name,
+        who_country=reviewer_flag_country,
     )
     return e
 
@@ -233,7 +237,7 @@ def render_hub(hub: Hub) -> Rendered:
     )
 
 
-STATIC_PATHS = ["/", "/places", "/about", "/about/methodology", "/terms", "/privacy"]
+STATIC_PATHS = ["/", "/places", "/about", "/about/methodology", "/payouts", "/terms", "/privacy"]
 
 
 def render_sitemaps(listings: list[Listing], hubs: dict[str, Hub]) -> dict[str, str]:

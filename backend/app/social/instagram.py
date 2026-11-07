@@ -1,4 +1,4 @@
-"""Instagram Content Publishing API: carousel of images -> published post.
+"""Instagram Content Publishing API: a carousel of images, or a Reel, -> published post.
 
 Flow (https://developers.facebook.com/docs/instagram-platform/content-publishing):
   1. POST /{ig-user-id}/media  {image_url, is_carousel_item=true}   -> child container, per image
@@ -7,12 +7,16 @@ Flow (https://developers.facebook.com/docs/instagram-platform/content-publishing
   4. POST /{ig-user-id}/media_publish {creation_id}                 -> media id
 Images must be JPEG at a public URL (a presigned S3 URL works) with an aspect ratio between
 4:5 and 1.91:1; a carousel holds 2 to 10 items; the account may publish 50 posts per 24 h.
+A Reel is one container instead: POST /{ig-user-id}/media {media_type=REELS, video_url, caption,
+share_to_feed, cover_url}, then the same poll (video processing takes longer) and media_publish.
+Reels must be MP4 (H.264, AAC at most 48 kHz), 3 s to 15 min, ideally 9:16 at 1080x1920.
 Same httpx style as app/whatsapp/client.py. Nothing here retries a publish: a failed
 media_publish is reported, never repeated blindly, so a post cannot go out twice.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -113,6 +117,19 @@ class InstagramClient:
         data = {"media_type": "CAROUSEL", "children": ",".join(children), "caption": caption}
         return str(self._post(f"{self.user_id}/media", data)["id"])
 
+    def create_reel_container(
+        self, video_url: str, caption: str, *, cover_url: str = "", share_to_feed: bool = True
+    ) -> str:
+        data: dict[str, Any] = {
+            "media_type": "REELS",
+            "video_url": video_url,
+            "caption": caption,
+            "share_to_feed": "true" if share_to_feed else "false",
+        }
+        if cover_url:
+            data["cover_url"] = cover_url
+        return str(self._post(f"{self.user_id}/media", data)["id"])
+
     def wait_finished(
         self,
         container_id: str,
@@ -136,6 +153,22 @@ class InstagramClient:
 
     def publish(self, creation_id: str) -> str:
         return str(self._post(f"{self.user_id}/media_publish", {"creation_id": creation_id})["id"])
+
+    # -------------------------------------------------------------- messaging
+    # Instagram messaging (instagram_business_manage_messages): the webhook gives a sender's
+    # Instagram-scoped id; the profile lookup turns it into a username, and replies go out
+    # through /{ig-user-id}/messages.
+    def username_of(self, igsid: str) -> str:
+        return str(self._get(igsid, {"fields": "username"}).get("username", "")).lower()
+
+    def send_dm(self, igsid: str, text: str) -> None:
+        self._post(
+            f"{self.user_id}/messages",
+            {
+                "recipient": json.dumps({"id": igsid}),
+                "message": json.dumps({"text": text[:1000]}),
+            },
+        )
 
 
 def client_from_settings(s: Settings | None = None) -> InstagramClient:
@@ -169,6 +202,31 @@ def publish_carousel(
     client.wait_finished(carousel, sleep=sleep)
     say(f"carousel container {carousel} ready; publishing")
     media_id = client.publish(carousel)
+    try:
+        link = client.permalink(media_id)
+    except InstagramPublishError as e:
+        log.warning("published %s but could not read its permalink: %s", media_id, e)
+        link = ""
+    return media_id, link
+
+
+def publish_reel(
+    client: InstagramClient,
+    video_url: str,
+    caption: str,
+    *,
+    cover_url: str = "",
+    say: Callable[[str], None] = log.info,
+    sleep: Callable[[float], None] = time.sleep,
+    timeout_s: float = 900,
+) -> tuple[str, str]:
+    """Upload, wait for Instagram to process the video, publish. Returns (media_id, permalink);
+    permalink may be "" if that last read fails after the post is live."""
+    container = client.create_reel_container(video_url, caption, cover_url=cover_url)
+    say(f"reel container {container} created; waiting for Instagram to process the video")
+    client.wait_finished(container, timeout_s=timeout_s, poll_s=10, sleep=sleep)
+    say(f"reel container {container} ready; publishing")
+    media_id = client.publish(container)
     try:
         link = client.permalink(media_id)
     except InstagramPublishError as e:

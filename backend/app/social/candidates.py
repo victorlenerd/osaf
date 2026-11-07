@@ -10,8 +10,8 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel
 
+from app.credit import credit, first_word
 from app.models import Review
-from app.pii import redact_phones
 
 DEMO_BUSINESS_PREFIX = "afefe:demo-"
 DEMO_REVIEW_PREFIX = "demo-"
@@ -87,20 +87,21 @@ class Candidate(BaseModel):
     summary: str
     good: list[str] = []
     created_at: str
+    # where the review's own audio lives, for the reel (no reviewer identifier in any of these)
+    submission_id: str = ""
+    audio_s3_key: str | None = None  # voice reviews: playable m4a
+    video_s3_key: str | None = None  # reel reviews: the archived source video
 
 
 def first_name(display_name: str | None) -> str:
     """First word of the WhatsApp display name, or a neutral label. Phone-shaped names are
     redacted by app.pii first, so a number never reaches a slide."""
-    words = redact_phones((display_name or "").strip()).split()
-    word = words[0].strip(",.;:!?\"'()[]") if words else ""
-    if not word or "*" in word:
-        return ANONYMOUS
-    return word[:24]
+    return first_word(display_name) or ANONYMOUS
 
 
 def to_candidate(review: Review) -> Candidate:
     x = review.extraction
+    who = credit(review)
     summary = (x.one_line_summary or "").strip() or (x.good[0].strip() if x.good else "")
     return Candidate(
         review_id=review.review_id,
@@ -109,14 +110,20 @@ def to_candidate(review: Review) -> Candidate:
         city=x.business.city,
         country=x.business.country,
         category=x.category,
-        reviewer_first_name=first_name(review.reviewer_display_name),
-        reviewer_country=review.reviewer_country,
+        # a reel nobody has proven they posted is credited to the account that posted it
+        reviewer_first_name=(
+            f"@{who.handle}"[:25] if who.handle and not who.name else first_name(who.name)
+        ),
+        reviewer_country=who.country,
         source=review.source,
         recommend=x.recommend,
         sentiment=x.overall_sentiment,
         summary=summary,
         good=list(x.good),
         created_at=review.created_at,
+        submission_id=review.submission_id,
+        audio_s3_key=review.audio_s3_key,
+        video_s3_key=review.video_s3_key,
     )
 
 

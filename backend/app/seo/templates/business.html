@@ -31,7 +31,7 @@
   {% for r in page.reviews %}{% set e = r.extraction %}
   <article class="card review" id="review-{{ r.review_id }}">
     <header>
-      <p class="who"><strong>{{ r.reviewer_display_name or 'Afefehub reviewer' }}</strong> {{ flag(r.reviewer_country) }}
+      <p class="who"><strong>{{ who(r) }}</strong> {{ flag(who_country(r)) }}
         <span class="muted">· {{ 'Video review' if r.source == 'reel' else 'Voice note' }} · <time datetime="{{ r.created_at }}">{{ date(r.created_at) }}</time></span></p>
       <p class="verdict">
         {% if e.rating %}<span class="stars" aria-label="{{ e.rating }} out of 5 stars">{{ stars(e.rating) }}</span> {{ e.rating }}/5 · {% endif %}

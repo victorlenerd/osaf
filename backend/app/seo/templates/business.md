@@ -28,7 +28,7 @@
 {% endif %}
 ## Reviews
 {% for r in page.reviews %}{% set e = r.extraction %}
-### {{ (r.reviewer_display_name or 'Afefehub reviewer') | oneline }}, {{ date(r.created_at) }} ({{ 'video review' if r.source == 'reel' else 'voice note' }})
+### {{ who(r) | oneline }}, {{ date(r.created_at) }} ({{ 'video review' if r.source == 'reel' else 'voice note' }})
 
 - Recommends: {{ e.recommend }}{% if e.rating %}
 - Rating: {{ e.rating }}/5{% endif %}{% if e.one_line_summary %}

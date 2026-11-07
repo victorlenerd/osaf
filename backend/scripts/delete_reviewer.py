@@ -58,7 +58,7 @@ def main() -> int:
     p = erase.preview(phone)
     print(
         f"{phone_label(phone)}: {p.reviews} published reviews, {p.submissions} submissions, "
-        f"{p.points} points"
+        f"{p.entries} unpaid payout entries"
     )
     if not args.yes:
         print("preview only; re-run with --yes to erase")
@@ -71,7 +71,8 @@ def _print_report(report: erase.ErasureReport, *, erased: bool) -> int:
     if erased:
         print(
             f"erased: {report.reviews} reviews, {report.submissions} submissions, "
-            f"{report.objects} S3 objects, {report.points_forfeited} points"
+            f"{report.objects} S3 objects, {report.payout_items} payout items "
+            f"({report.paid_entries_kept} paid entries kept without the number)"
         )
     for bid in report.businesses_rebuilt:
         print(f"  rebuilt  {bid}")

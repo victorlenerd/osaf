@@ -31,7 +31,10 @@ Built for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/gl
    Instagram reel of you reviewing a place, **or just send a voice note** describing your visit.
    No app, no account. The agent transcribes it, asks at most three short questions if something
    is missing, shows you the structured review, and publishes it when you reply "OK".
-3. Text **points** to the same number to see your reviewer balance, or **delete my data** to erase
+3. Ask the same number for a recommendation, e.g. *best suya in Lekki* or *barber in Wuse 2*, or
+   share a location pin. The agent searches Afefehub's reviewed businesses and answers with a
+   numbered shortlist and links; *tell me more about 2* gets what reviewers said about that one.
+4. Text **points** to the same number to see your payout entries, or **delete my data** to erase
    everything Afefehub holds about you (confirm with **DELETE**; it is gone within a minute).
 
 The public API needs no key:
@@ -75,9 +78,10 @@ unstructured speech into a searchable record that works for businesses Google ha
 | **Businesses Google does not know** | If Google Places has no match after two searches, the agent creates a user-sourced `afefe:<slug>` business from the reviewer's words. Informal businesses get a page on day one. |
 | **Living summary** | After every published review, Muse Spark regenerates the business's summary: headline, recurring praise, recurring complaints, standout dishes or services. Counts and recommend rate are computed in code, never by the model. |
 | **Search** | Typeahead over business names *and the names reviewers actually said*, keywords, address and city, with fuzzy matching and a boost for well-reviewed, well-recommended businesses. Filter by 13 countries and 20 categories. |
+| **Ask on WhatsApp** | The number that takes reviews also recommends places. "Where can I get good suya in Lekki?" gets up to three reviewed businesses with their recommend rate, headline and link; a location pin narrows it to places nearby; follow-ups like "tell me more about 2" answer from what reviewers said. When Afefehub has nothing yet it offers Google listings, marked as unreviewed, and invites the person to review one. |
 | **Google fallback** | Empty result? One tap checks Google Places and shows the listing with an AI summary of up to five live Google reviews (attributed, never stored). |
-| **Reviewer rewards** | 10 points per published review, glowing or grumpy; 100 points earns a US$10 Amazon gift card. Capped at 3 reviews per reviewer per rolling week. A thank-you, never payment for a particular opinion. |
-| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag, and a how-to-submit closer. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
+| **Reviewer payouts (Nigeria)** | Monthly cash payouts for reviews of Nigerian businesses: 5 pts per voice note, 10 pts per reel from its verified author (a reel someone else posted earns nothing) (the reviewer DMs a WhatsApp-issued code to @afefehub on Instagram from the posting account). After publishing, the agent asks whether to enter the review; only reviews entered with **ENTER** earn points, and only if they pass eligibility (Nigerian business, not a duplicate or near-duplicate by audio, video and transcript fingerprints, face check passed for reels, 3 reviews a week, reviewer not banned). 1 pt = up to ₦1,000 from monthly category pools (Shortlets, Restaurants and Hotels ₦1,000,000 each, everything else ₦500,000), paid pro rata when a pool is oversubscribed. A person reviews every entry before payment; payment is a bank transfer to a Nigerian account, or an Amazon gift card on request. Same points for every opinion. |
+| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag (a reel the sender did not post is credited to its Instagram handle instead), and a how-to-submit closer. Each review in it then gets a Reel of its own that plays the reviewer's whole recording under their review card, with a waveform that fills in as it plays. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
 
 <p align="center">
   <img src="docs/images/business.png" alt="Business page with the AI summary, recommend meter and reel and voice reviews" width="48%">
@@ -93,6 +97,7 @@ One API key, one base URL (`https://api.meta.ai/v1`), one client (`backend/app/m
 | Transcribe | `muse-voice-transcribe-1.0` | Diarized speech-to-text (`mode=DIARIZATION`) with a language bias list and **keyword biasing**: when the reviewer answers a question by voice, the candidate business names are passed as ASR keywords so "number two" and misheard names resolve correctly. |
 | Verify | `sam-3.1` | Text-prompted detection and tracking of *"a person's face"* across the reel. The clip is re-encoded at about 2 fps to stay inside SAM's 50–1500 frame window. **Pass rule:** a confident face track in at least 50% of frames **and** one diarized speaker holding at least 60% of the speech. Screen recordings, slideshows and voice-overs fail. Reels only; voice notes skip this step and are badged. |
 | Understand | `muse-spark-1.3` | A tool-calling agent with four tools: `search_places` (Google Places API New), `ask_user`, `finalize_review` and `reject_review`. It resolves the business, extracts visit time and place, what was good, what to improve, recommend yes/no/maybe, category and keywords, and asks the reviewer on WhatsApp only when the recording is not enough. |
+| Recommend | `muse-spark-1.3` | A second tool-calling agent for WhatsApp questions: `search_vendors` (OpenSearch, with city/area and distance filters), `get_vendor`, `search_google` and `reply`. A JSON-mode intent check with `reasoning_effort="minimal"` decides whether a message sent mid-review answers the review's question or asks for a recommendation. |
 | Summarize | `muse-spark-1.3` | JSON-mode summaries for each business and for Google-only listings, with `reasoning_effort="minimal"`. Measured on this task: default reasoning spent about 5k tokens and 35 s; minimal takes about 5 s with the same quality. |
 | Pick | `muse-spark-1.3` | JSON-mode ranking of the week's published reviews for the Instagram carousel: one per business, spread across countries and categories, at most one critical review, a reason per pick and a hook line. Every returned id is checked against the candidate set, and a deterministic heuristic fills gaps or takes over if the model fails. |
 
@@ -103,6 +108,10 @@ One API key, one base URL (`https://api.meta.ai/v1`), one client (`backend/app/m
 - Business confidence must be at least 0.7; everything else degrades gracefully (`recommend: maybe`, empty lists).
 - At most 3 clarification rounds. At zero, `ask_user` is removed from the tool list, so the model
   must finalize or reject. At most 8 iterations and 4 searches per turn.
+- The recommendation agent may only list businesses a tool returned this turn or showed last
+  turn; an unknown id gets one retry, then the reply falls back to a plain list of the real search
+  results. Google is only consulted after an empty Afefehub search, once per turn, and each number
+  gets at most 40 recommendation turns a day.
 - `reject_review` filters vlogs, skits, unboxings and rants: Afefehub only publishes spoken reviews of a real visit.
 - The agent is **stateless per WhatsApp turn**: the transcript, its own draft from earlier rounds
   (`ask_user.fields_so_far`), Q&A log and the last candidates shown are rebuilt from DynamoDB each
@@ -201,8 +210,8 @@ environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md
 
 **Who it serves**
 
-- **Reviewers** get a home for the reviews they already film, in their own language, with points
-  towards a gift card and a country flag on every review.
+- **Reviewers** get a home for the reviews they already film, in their own language, with a country
+  flag on every review and, in Nigeria, monthly cash payouts for the reviews they enter.
 - **Businesses**, including ones with no Google listing, get a public page with verified video and
   voice reviews and a summary that tells them exactly what customers praise and complain about.
 - **Customers** get reviews they can look in the eye instead of anonymous stars.
@@ -216,8 +225,11 @@ environment) is in [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md
    informal merchants.
 4. Concierge onboarding for business associations and markets that want their traders listed.
 
-**Integrity rules.** Same points for every opinion, positive or negative. The gift card is a
-thank-you, never payment for a particular review. Reviews are public reels or voice notes; nothing
+**Integrity rules.** Same points for every opinion, positive or negative: points depend only on the
+kind of review (voice note or your own verified reel), never on what it says.
+Payouts are a thank-you for taking part, never payment for a particular review. Duplicates and
+near-duplicates earn nothing, a person checks every entry before anyone is paid, and spam or abuse
+gets a reviewer banned with unpaid points forfeited. Reviews are public reels or voice notes; nothing
 is typed in. The terms, privacy policy and operator (1CTECH, Ontario, Canada) are published on the
 site.
 
@@ -252,7 +264,7 @@ cd backend && python scripts/render_site.py --fixture --out /tmp/site
 - Business claiming and replies.
 - Keep the "send the file on WhatsApp" fallback first-class, since Instagram downloads can break.
 - Staging environment and deploys from GitHub Actions with OIDC.
-- Schedule the weekly Instagram carousel (EventBridge Scheduler -> ECS RunTask) once a few manual
+- Schedule the weekly Instagram carousel and Reels (EventBridge Scheduler -> ECS RunTask) once a few manual
   runs have gone well; today it is a dry run by default and publishes only on a typed confirmation.
 
 ## Repository
@@ -260,7 +272,7 @@ cd backend && python scripts/render_site.py --fixture --out /tmp/site
 | Path | What |
 |---|---|
 | `backend/` | FastAPI service: WhatsApp webhook, pipeline, Muse Spark agent, public API, tests |
-| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage), `render_site.py` (re-render every crawlable page; nightly), `ai_visibility.py` (does ChatGPT, Perplexity or Gemini cite Afefehub?) |
+| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel plus one Reel per review with the reviewer's audio: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage), `render_site.py` (re-render every crawlable page; nightly), `ai_visibility.py` (does ChatGPT, Perplexity or Gemini cite Afefehub?) |
 | `frontend/` | Next.js static site (search, business pages, about, terms, privacy) and a zero-dependency mock API |
 | `infra/terraform/` | AWS: Route53, ACM, S3 + CloudFront, ECS Fargate + ALB, DynamoDB, OpenSearch, ECR, SSM, WAF |
 | `scripts/` | `deploy_backend.sh` (build, push by git SHA, roll ECS), `deploy_site.sh` (build and sync the site without touching backend-rendered pages), `set_secrets.sh` (SSM secrets) |

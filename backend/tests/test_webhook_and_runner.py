@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.models import QA, Conversation, Review, Submission, SubmissionState, Transcript
+from app.pii import phone_hash
 from app.pipeline import runner
 
 
@@ -188,6 +189,26 @@ def world(monkeypatch):
     monkeypatch.setattr(
         runner.publish, "publish_submission", lambda sub, conv: events.append("publish")
     )
+    # Discovery never reaches the model API here: the intent check reads every message as an
+    # answer, and a discovery turn is recorded instead of run, unless a test says otherwise.
+    monkeypatch.setattr(runner.discover, "classify_intent", lambda text, q: "answer")
+
+    def fake_turn(conv, text, remember_as=None):
+        events.append(f"discover:{text}")
+        return runner.discover.DiscoveryOutcome(
+            message=f"vendors for {text}",
+            session=runner.discover.DiscoverySession(last_query=remember_as or text),
+            searched=True,
+        )
+
+    monkeypatch.setattr(runner.discover, "run_discovery_turn", fake_turn)
+    store.discovery_turns = 0
+
+    def incr(phone):
+        store.discovery_turns += 1
+        return store.discovery_turns
+
+    store.incr_discovery_count = incr
     return store, sent, events
 
 
@@ -195,7 +216,7 @@ def _text(body: str) -> dict:
     return {"type": "text", "text": {"body": body}}
 
 
-def test_junk_gets_help(world):
+def test_greeting_gets_help(world):
     store, sent, events = world
     runner.process_inbound("2348012345678", _text("hello"), "Ada")
     assert "Afefehub" in sent[0][1] and not events
@@ -377,13 +398,12 @@ def test_voice_note_refused_at_limit(voice):
     assert "next slot" in sent[0][1]
 
 
-def test_points_command_reports_balance_and_slots(world):
+def test_points_command_reports_entries_and_slots(world):
     store, sent, events = world
-    store.points[PHONE] = 30
     _published_review(store, PHONE, 1)
     for word in ("Points?", "my points", "balance", "SCORE"):
         runner.process_inbound(PHONE, _text(word), "Ada")
-        assert "30 points" in sent[-1][1] and "2 review slots" in sent[-1][1]
+        assert "payout" in sent[-1][1] and "2 review slots" in sent[-1][1]
     runner.process_inbound(PHONE, _text("I have points"), "Ada")
     assert "Afefehub" in sent[-1][1] and not events
 
@@ -407,7 +427,7 @@ def test_points_command_does_not_consume_clarification(world):
 def test_help_mentions_limit_and_points(world):
     store, sent, events = world
     runner.process_inbound(PHONE, _text("hello"), "Ada")
-    assert "3 reviews a week" in sent[0][1] and "10 points" in sent[0][1]
+    assert "3 reviews a week" in sent[0][1] and "5 pts for a voice note" in sent[0][1]
 
 
 def test_quota_math_and_humanize(monkeypatch):
@@ -770,7 +790,7 @@ def test_voice_pipeline_skips_face_check(world, monkeypatch, tmp_path):
     assert events == ["extract"]
 
 
-def test_publish_voice_review_skips_reel_claim(monkeypatch):
+def test_publish_voice_review_skips_reel_claim(monkeypatch, rewards_db):
     from app.models import PlaceRef, ReviewExtraction
     from app.pipeline import publish
 
@@ -788,6 +808,7 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
     monkeypatch.setattr(publish.dynamo, "put_summary", lambda bid, s: None)
     monkeypatch.setattr(publish, "generate_summary", lambda b, r, p: BusinessSummary())
     monkeypatch.setattr(publish.s3, "put_json", lambda o, k: k)
+    monkeypatch.setattr(publish.s3, "copy", lambda src, dst: dst)
     monkeypatch.setattr(publish.opensearch, "upsert_business", lambda b, s: None)
     rendered: list[str] = []
 
@@ -796,9 +817,8 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
         raise RuntimeError("site bucket down")  # must not fail the publish
 
     monkeypatch.setattr(publish.seo_site, "publish_business_page", render_page)
-    awarded: list[tuple[str, int]] = []
     monkeypatch.setattr(
-        publish.dynamo, "add_points", lambda phone, n: awarded.append((phone, n)) or 40
+        publish.dynamo, "add_points", lambda *a: pytest.fail("publishing no longer awards points")
     )
     monkeypatch.setattr(publish.dynamo, "list_reviews_by_reviewer_since", lambda *a, **k: [])
     sent: list[str] = []
@@ -815,11 +835,13 @@ def test_publish_voice_review_skips_reel_claim(monkeypatch):
     review = publish.publish_submission(sub, Conversation(phone=phone))
     assert review is saved["review"]
     assert review.source == "voice" and review.reel_url is None
-    assert review.audio_s3_key == "submissions/v1/voice.m4a"
+    # the playable audio is retained under reviews/<id>/ (submissions/ expires after 30 days)
+    assert review.audio_s3_key == f"reviews/{review.review_id}/voice.m4a"
     assert review.reviewer_country == "KE"
     assert sub.state == SubmissionState.PUBLISHED
-    assert awarded == [(phone, 10)]
-    assert "+10 points" in sent[0] and "you now have 40" in sent[0]
+    # a review of a Nigerian business is offered for the payout, whoever reviews it
+    assert "Reply *ENTER*" in sent[0] and "5 pts" in sent[0]
+    assert rewards_db.offers[(phone_hash(phone), review.review_id)].phone == phone
     assert rendered == ["x"]
     # the confirmation links the canonical, crawlable page
     assert f"https://afefehub.com/b/{biz.slug}" in sent[0]
@@ -893,7 +915,7 @@ def eraser(world, monkeypatch):
     from app.pipeline import erase
 
     erased: list[str] = []
-    preview = erase.ErasurePreview(reviews=2, submissions=3, points=20)
+    preview = erase.ErasurePreview(reviews=2, submissions=3, entries=2)
     monkeypatch.setattr(runner.erase, "preview", lambda phone: preview)
 
     def fake_erase(phone):
@@ -910,7 +932,7 @@ def test_delete_request_asks_for_confirmation(eraser):
         runner.process_inbound(PHONE, _text(phrase), "Ada")
         body = sent[-1][1]
         assert "2 published reviews" in body and "1 other submission" in body
-        assert "20 points" in body
+        assert "your 2 payout entries" in body and "bank details" in body
         assert "Reply *DELETE*" in body
     assert store.convs[PHONE].deletion_requested_at and not erased and not events
 
@@ -1144,3 +1166,294 @@ def test_help_mentions_deletion(world):
     store, sent, events = world
     runner.process_inbound(PHONE, _text("hi"), "Ada")
     assert "delete my data" in sent[0][1]
+
+
+# ------------------------------------------------------------------- payouts and bans
+def test_banned_number_is_told_once_a_day_and_nothing_runs(world, rewards_db):
+    from app.moderation import bans
+
+    store, sent, events = world
+    bans.ban(phone_hash(PHONE), "spam")
+    runner.process_inbound(PHONE, _text("https://www.instagram.com/reel/abc/"), "Ada")
+    runner.process_inbound(PHONE, _text("hello"), "Ada")
+    assert not events and len(sent) == 1 and "can no longer submit" in sent[0][1]
+
+
+def test_banned_number_can_still_erase(eraser, rewards_db):
+    from app.moderation import bans
+
+    store, sent, events, erased = eraser
+    bans.ban(phone_hash(PHONE), "abuse")
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    runner.process_inbound(PHONE, _text("DELETE"), "Ada")
+    assert erased == [PHONE]
+
+
+def test_payout_commands_route_even_mid_review(world, monkeypatch):
+    store, sent, events = world
+    called: list[str] = []
+    monkeypatch.setattr(runner.rewards, "handle_enter", lambda c: called.append("enter"))
+    monkeypatch.setattr(runner.rewards, "handle_verify", lambda c: called.append("verify"))
+    monkeypatch.setattr(runner.rewards, "ask_payout_details", lambda c: called.append("details"))
+    store.subs["s1"] = Submission(
+        submission_id="s1", phone=PHONE, reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION, pending_question="Which Yaba?",
+    )  # fmt: skip
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    for word in ("ENTER", "verify", "bank details", "change bank"):
+        runner.process_inbound(PHONE, _text(word), "Ada")
+    assert called == ["enter", "verify", "details", "details"]
+    assert store.subs["s1"].qa_log == [] and not events
+
+
+def test_bank_details_answer_is_not_a_clarification(world, rewards_db):
+    store, sent, events = world
+    conv = Conversation(phone=PHONE, active_submission_id="s1")
+    conv.payout_details_requested_at = conv.updated_at
+    store.convs[PHONE] = conv
+    store.subs["s1"] = Submission(
+        submission_id="s1", phone=PHONE, reel_shortcode="sc",
+        state=SubmissionState.AWAITING_CLARIFICATION, pending_question="Which Yaba?",
+    )  # fmt: skip
+    runner.process_inbound(PHONE, _text("Kuda, 2012345678, Ada Obi"), "Ada")
+    assert rewards_db.payees[phone_hash(PHONE)].bank_name == "Kuda"
+    assert store.subs["s1"].qa_log == [] and not events
+
+
+def test_duplicate_media_is_rejected_before_transcription(world, monkeypatch, tmp_path):
+    from app.fingerprint import check as fpcheck
+    from app.models import SimilarityMatch
+
+    store, sent, events = world
+    monkeypatch.undo()
+    monkeypatch.setattr(runner, "dynamo", store)
+    monkeypatch.setattr(runner.wa, "send_text", lambda to, body, **k: sent.append((to, body)))
+    get_settings().work_dir = str(tmp_path)
+    monkeypatch.setattr(runner.s3, "upload_file", lambda p, key, ct=None: key)
+
+    def fake_fetch(media_id, work):
+        (work / "voice.ogg").write_bytes(b"ogg")
+        return work / "voice.ogg"
+
+    monkeypatch.setattr(runner, "fetch_voice_note", fake_fetch)
+    monkeypatch.setattr(runner, "transcode_for_playback", lambda n, out: out)
+    monkeypatch.setattr(runner, "extract_audio", lambda n, out: out.write_bytes(b"wav") or out)
+    monkeypatch.setattr(
+        runner.fpcheck,
+        "check",
+        lambda fp, **k: fpcheck.Verdict(
+            checked=True, duplicate=SimilarityMatch(review_id="old", exact=True)
+        ),
+    )
+    monkeypatch.setattr(
+        runner, "transcribe_audio", lambda *a, **k: pytest.fail("a duplicate is never transcribed")
+    )
+    sub = Submission(submission_id="v1", phone=PHONE, kind="voice", wa_media_id="m1")
+    store.subs["v1"] = sub
+    runner._run_pipeline(sub, Conversation(phone=PHONE, active_submission_id="v1"))
+    assert sub.state == SubmissionState.REJECTED and "duplicate of review old" in sub.progress_note
+    assert sub.media_sha256 and "already on Afefehub" in sent[-1][1]
+
+
+# ------------------------------------------------------------------ vendor discovery routing
+@pytest.fixture
+def disco(world, monkeypatch):
+    """`world` with the model key set, so discovery runs the (stubbed) agent turn."""
+    monkeypatch.setattr(get_settings(), "model_api_key", "k")
+    return world
+
+
+def _waiting(store: FakeStore, state: SubmissionState, question: str = "Which branch?"):
+    sub = Submission(
+        submission_id="s1",
+        phone=PHONE,
+        reel_url="u",
+        reel_shortcode="sc",
+        state=state,
+        pending_question=question,
+    )
+    store.subs["s1"] = sub
+    store.convs[PHONE] = Conversation(phone=PHONE, active_submission_id="s1")
+    return sub
+
+
+def test_free_text_is_a_vendor_question(disco):
+    store, sent, events = disco
+    runner.process_inbound(PHONE, _text("where can I get good jollof in Ikeja"), "Ada")
+    assert events == ["discover:where can I get good jollof in Ikeja"]
+    assert sent[-1][1] == "vendors for where can I get good jollof in Ikeja"
+    assert store.convs[PHONE].discovery.last_query == "where can I get good jollof in Ikeja"
+
+
+def test_greetings_and_help_still_get_the_intro(disco):
+    store, sent, events = disco
+    for phrase in ("hi", "Hello!", "help", "menu", "?", "good morning", "how does this work?"):
+        runner.process_inbound(PHONE, _text(phrase), "Ada")
+        assert "Looking for somewhere good?" in sent[-1][1], phrase
+    assert not events
+
+
+def test_confirm_word_publishes_without_an_intent_check(disco, monkeypatch):
+    store, sent, events = disco
+    _waiting(store, SubmissionState.CONFIRMING, "Here's what I got")
+    monkeypatch.setattr(
+        runner.discover, "classify_intent", lambda *a: pytest.fail("intent check ran")
+    )
+    runner.process_inbound(PHONE, _text("ok"))
+    assert events == ["publish"]
+
+
+def test_number_reply_is_an_answer_without_an_intent_check(disco, monkeypatch):
+    store, sent, events = disco
+    _waiting(store, SubmissionState.AWAITING_CLARIFICATION, "Which one? 1. A 2. B")
+    monkeypatch.setattr(
+        runner.discover, "classify_intent", lambda *a: pytest.fail("intent check ran")
+    )
+    runner.process_inbound(PHONE, _text("2"))
+    assert events == ["extract:2"]
+
+
+def test_vendor_question_mid_review_leaves_the_review_waiting(disco, monkeypatch):
+    store, sent, events = disco
+    sub = _waiting(store, SubmissionState.AWAITING_CLARIFICATION, "Which branch?")
+    asked: list = []
+    monkeypatch.setattr(
+        runner.discover,
+        "classify_intent",
+        lambda text, q: asked.append((text, q)) or "discover",
+    )
+    runner.process_inbound(PHONE, _text("any good barber in Yaba?"))
+    assert asked == [("any good barber in Yaba?", "Which branch?")]
+    assert events == ["discover:any good barber in Yaba?"]
+    assert "still waiting for your reply" in sent[-1][1]
+    assert sub.state == SubmissionState.AWAITING_CLARIFICATION
+    assert sub.pending_question == "Which branch?" and sub.qa_log == []
+
+
+def test_answer_mid_review_is_still_an_answer(disco):
+    store, sent, events = disco
+    sub = _waiting(store, SubmissionState.AWAITING_CLARIFICATION, "Which branch?")
+    runner.process_inbound(PHONE, _text("the one on Allen Avenue in Ikeja"))
+    assert events == ["extract:the one on Allen Avenue in Ikeja"]
+    assert sub.qa_log[-1].a == "the one on Allen Avenue in Ikeja"
+
+
+def test_vendor_question_while_review_is_processing(disco):
+    store, sent, events = disco
+    _waiting(store, SubmissionState.TRANSCRIBING, None)
+    runner.process_inbound(PHONE, _text("best shawarma in Wuse 2"))
+    assert events == ["discover:best shawarma in Wuse 2"]
+    assert "still working on your review" in sent[-1][1]
+
+
+def test_location_pin_reruns_the_last_search_near_it(disco):
+    store, sent, events = disco
+    runner.process_inbound(PHONE, _text("suya spots"))
+    loc = {"type": "location", "location": {"latitude": 6.4474, "longitude": 3.4723}}
+    runner.process_inbound(PHONE, loc)
+    conv = store.convs[PHONE]
+    assert (conv.last_location.lat, conv.last_location.lng) == (6.4474, 3.4723)
+    assert events[-1] == "discover:I just shared my location. Same request, near me: suya spots"
+    # a second pin re-runs the original request, not the wrapper around it
+    loc2 = {"type": "location", "location": {"latitude": 6.5, "longitude": 3.4}}
+    runner.process_inbound(PHONE, loc2)
+    assert events[-1] == "discover:I just shared my location. Same request, near me: suya spots"
+    assert store.convs[PHONE].discovery.last_query == "suya spots"
+
+
+def test_location_pin_without_a_search_asks_what_for(disco):
+    store, sent, events = disco
+    runner.process_inbound(
+        PHONE, {"type": "location", "location": {"latitude": 9.07, "longitude": 7.4}}
+    )
+    assert "What are you looking for nearby?" in sent[-1][1] and not events
+    runner.process_inbound(PHONE, {"type": "location", "location": {"latitude": "x"}})
+    assert "couldn't read that location" in sent[-1][1]
+
+
+def test_discovery_daily_cap(disco, monkeypatch):
+    store, sent, events = disco
+    monkeypatch.setattr(get_settings(), "discovery_daily_limit", 2)
+    for _ in range(3):
+        runner.process_inbound(PHONE, _text("pharmacy in Lekki"))
+    assert len(events) == 2 and "asked me a lot today" in sent[-1][1]
+
+
+def test_discovery_without_model_key_falls_back_to_plain_search(world, monkeypatch):
+    store, sent, events = world
+    monkeypatch.setattr(get_settings(), "model_api_key", "")
+    hits = [
+        {
+            "business_id": "ChIJ1",
+            "name": "Suya Palace",
+            "formatted_address": "Admiralty Way, Lekki",
+            "review_count": 2,
+            "recommend_rate": 1.0,
+            "summary_headline": "Spicy suya, quick service",
+        }
+    ]
+    monkeypatch.setattr(runner.opensearch, "search", lambda q, **kw: hits)
+    runner.process_inbound(PHONE, _text("suya in Lekki"))
+    body = sent[-1][1]
+    assert "1. *Suya Palace*" in body and "100% recommend (2 reviews)" in body
+    assert "business?id=ChIJ1" in body and not events
+
+
+def test_incr_discovery_count_and_erasure_of_counters(monkeypatch):
+    from decimal import Decimal
+
+    from app.store import dynamo
+
+    updates: list[dict] = []
+    deleted: list[tuple] = []
+
+    class T:
+        def update_item(self, **kw):
+            updates.append(kw)
+            return {"Attributes": {"turns": Decimal(3)}}
+
+        def query(self, **kw):
+            assert kw["ExpressionAttributeValues"][":disco"] == "DISCO#"
+            return {"Items": [{"SK": "DISCO#2026-11-05"}, {"SK": "DISCO#2026-11-06"}]}
+
+        def delete_item(self, Key):
+            deleted.append((Key["PK"], Key["SK"]))
+
+    monkeypatch.setattr(dynamo, "_table", lambda: T())
+    assert dynamo.incr_discovery_count("p") == 3
+    kw = updates[0]
+    assert kw["Key"]["SK"].startswith("DISCO#") and "expires_at" in kw["UpdateExpression"]
+    for key in kw["ExpressionAttributeValues"]:
+        assert key in kw["UpdateExpression"]
+    dynamo.delete_conversation("p")
+    assert deleted == [
+        ("CONV#p", "META"),
+        ("CONV#p", "POINTS"),
+        ("CONV#p", "DISCO#2026-11-05"),
+        ("CONV#p", "DISCO#2026-11-06"),
+    ]
+
+
+# ------------------------------------------------------- before the payout launch (switch off)
+@pytest.fixture
+def payouts_off(monkeypatch):
+    monkeypatch.setattr(get_settings(), "payouts_enabled", False)
+
+
+def test_switch_off_keeps_the_current_points_scheme_in_chat(world, payouts_off, monkeypatch):
+    store, sent, events = world
+    store.points[PHONE] = 30
+    runner.process_inbound(PHONE, _text("points"), "Ada")
+    assert "You have 30 points" in sent[-1][1]
+    runner.process_inbound(PHONE, _text("hello"), "Ada")
+    assert "earns 10 points" in sent[-1][1] and "payout" not in sent[-1][1]
+    called: list[str] = []
+    monkeypatch.setattr(runner.rewards, "handle_enter", lambda c: called.append("enter"))
+    runner.process_inbound(PHONE, _text("ENTER"), "Ada")
+    assert not called  # no payout commands before launch
+
+
+def test_switch_off_delete_confirmation_mentions_points(eraser, payouts_off):
+    store, sent, events, erased = eraser
+    runner.process_inbound(PHONE, _text("delete my data"), "Ada")
+    assert "your 0 points" in sent[-1][1] and "bank details" not in sent[-1][1]
