@@ -3,6 +3,7 @@
 PK / SK layout
   CONV#<phone>        META                       Conversation
   CONV#<phone>        POINTS                     reviewer reward balance {points, updated_at}
+  CONV#<phone>        DISCO#<YYYY-MM-DD>         vendor-discovery turns that day (TTL 2 days)
   SUB#<id>            META                       Submission   GSI1: CONV#<phone>/SUB#<created>
   WAMSG#<wamid>       META                       webhook dedupe (TTL 24h)
   REEL#<shortcode>    META                       one review per reel
@@ -423,6 +424,22 @@ def add_points(phone: str, n: int) -> int:
     return int(r["Attributes"]["points"])
 
 
+def _discovery_day() -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+def incr_discovery_count(phone: str) -> int:
+    """Atomically count one vendor-discovery turn for this number today (UTC); returns the
+    new total. The item expires two days later, so nothing accumulates."""
+    r = _table().update_item(
+        Key={"PK": f"CONV#{phone}", "SK": f"DISCO#{_discovery_day()}"},
+        UpdateExpression="ADD turns :one SET expires_at = :exp",
+        ExpressionAttributeValues={":one": 1, ":exp": int(time.time()) + 2 * 86400},
+        ReturnValues="UPDATED_NEW",
+    )
+    return int(r["Attributes"]["turns"])
+
+
 def get_points(phone: str) -> int:
     r = _table().get_item(Key={"PK": f"CONV#{phone}", "SK": "POINTS"})
     return int(r["Item"].get("points", 0)) if "Item" in r else 0
@@ -462,9 +479,18 @@ def _delete(pk: str, sk: str) -> None:
 
 
 def delete_conversation(phone: str) -> None:
-    """The conversation record and the points balance of one number."""
+    """The conversation record (with its discovery chat and location pin), the points balance
+    and the discovery counters of one number."""
     _delete(f"CONV#{phone}", "META")
     _delete(f"CONV#{phone}", "POINTS")
+    # Counters carry a TTL, but Dynamo deletes lazily, so list whatever is still there.
+    r = _table().query(
+        KeyConditionExpression="PK = :pk AND begins_with(SK, :disco)",
+        ExpressionAttributeValues={":pk": f"CONV#{phone}", ":disco": "DISCO#"},
+        ProjectionExpression="SK",
+    )
+    for item in r.get("Items", []):
+        _delete(f"CONV#{phone}", item["SK"])
 
 
 def delete_submission(submission_id: str) -> None:

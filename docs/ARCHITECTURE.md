@@ -44,6 +44,20 @@ history that an AI keeps summarized.
 | CONFIRMING | The reviewer sees the structured result on WhatsApp and replies OK or a correction | — |
 | PUBLISHED | Review stored, business upserted (atomic counters), running summary regenerated from **all** reviews, OpenSearch doc rebuilt | **Muse Spark 1.3** (JSON mode) |
 
+### Vendor discovery on the same number
+Any typed message that is not a reel link, a command (*points*, *delete my data*) or an answer
+to a waiting review is a vendor question, answered by a second Muse Spark tool loop
+(`app/agent/discover.py`): `search_vendors` (OpenSearch with `city`/area and `near` geo filters),
+`get_vendor` (summary plus the latest reviews' good/improve points), `search_google` (only after
+an empty Afefehub search, sharing the public API's Google rate limiter) and `reply`, which must
+list only ids a tool returned. Greetings get the intro. While a review waits on the reviewer, a
+number, a confirm word or a short phrase is always the answer; anything longer goes through a
+JSON-mode intent check (`reasoning_effort="minimal"`) and only a confident "discover" is answered
+as a search, with the review left untouched. A location pin is stored on the conversation and
+re-runs the last search nearby. The chat (last 6 turns, the numbered options shown) and the pin
+live on the Conversation item for 30 minutes of use, so erasure removes them; a per-number daily
+counter (`CONV#<phone>/DISCO#<day>`, TTL 2 days) caps agent turns.
+
 ### Why these guardrails
 * **Only the business blocks publishing.** Everything else degrades gracefully (`recommend: maybe`,
   empty lists). The agent must take `place_id` from a real `search_places` result; it cannot
@@ -66,7 +80,9 @@ message via the table TTL.
 
 **OpenSearch** index `businesses`: edge-ngram names (typeahead), reviewer-spoken names, address,
 city, keywords aggregated from reviews, summary headline/praise, geo point. Query is a
-`multi_match` with fuzziness, boosted by `log1p(review_count) * (0.5 + recommend_rate)`.
+`multi_match` with fuzziness, boosted by `log1p(review_count) * (0.5 + recommend_rate)`; the
+WhatsApp agent adds a city-or-address filter and, for a shared location, a `geo_distance` filter
+with a gauss decay so closer businesses rank higher.
 
 **S3** `afefehub-media-prod`: `submissions/<id>/{source.mp4, audio.wav, transcript.json,
 facecheck/result.json, extraction.json, agent_trace.jsonl}` (voice reviews: `voice.ogg`,

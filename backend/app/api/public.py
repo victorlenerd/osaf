@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import logging
-import threading
-import time
 from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 
+from app.agent import places
 from app.agent.places import get_place_details, search_places
 from app.agent.summary import summarize_google_reviews
 from app.config import get_settings
@@ -117,30 +116,9 @@ def review_audio(review_id: str):
 GOOGLE_ATTRIBUTION = "Reviews from Google"
 
 
-class _TokenBucket:
-    """Per-process burst guard on paid Google calls.
-
-    A daily quota set in Google Cloud console is the real cap."""
-
-    def __init__(self, rate_per_minute: int):
-        self.capacity = float(rate_per_minute)
-        self.tokens = float(rate_per_minute)
-        self.refill_per_s = rate_per_minute / 60.0
-        self.updated = time.monotonic()
-        self.lock = threading.Lock()
-
-    def take(self) -> bool:
-        with self.lock:
-            now = time.monotonic()
-            self.tokens = min(self.capacity, self.tokens + (now - self.updated) * self.refill_per_s)
-            self.updated = now
-            if self.tokens < 1:
-                return False
-            self.tokens -= 1
-            return True
-
-
-google_bucket = _TokenBucket(60)
+# One per-process burst guard on paid Google calls, shared with the WhatsApp discovery agent.
+google_bucket = places.google_bucket
+_TokenBucket = places.TokenBucket
 
 
 def _google_call[T](fn: Callable[[], T]) -> T:

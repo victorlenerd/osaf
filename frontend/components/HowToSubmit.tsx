@@ -49,6 +49,10 @@ export default function HowToSubmit({ compact = false }: { compact?: boolean }) 
           )}
           {!WHATSAPP_NUMBER && <span className="text-xs italic muted">(number coming soon)</span>}
         </div>
+        <p className="mt-3 text-sm muted">
+          Looking for somewhere good? Ask the same number, e.g. &ldquo;best suya in Lekki&rdquo; or share your location, and it
+          recommends places from real customer reviews.
+        </p>
       </div>
     </section>
   );
