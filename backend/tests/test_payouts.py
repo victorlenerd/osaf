@@ -110,10 +110,21 @@ def test_reencoded_audio_is_a_duplicate_and_other_audio_is_not(tmp_path):
         )
         return out
 
-    a = tone("a.wav", "anoisesrc=seed=1:color=pink")
-    b = tmp_path / "b.ogg"
+    # Two different "melodies" (a tone stepping through a pitch pattern over a low pulse).
+    # Structured audio like this, or speech, is what Chromaprint tells apart; two clips of
+    # random noise look alike to it (about 0.45), so noise makes a bad "different" sample.
+    a = tone(
+        "a.wav",
+        r"aevalsrc=0.5*sin(2*PI*t*220*pow(2\,floor(mod(t*4\,12))/12))"
+        r"+0.2*sin(2*PI*t*55):s=22050",
+    )
+    b = tmp_path / "b.ogg"  # the same melody re-encoded
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(a), "-b:a", "48k", str(b)], check=True)
-    c = tone("c.wav", "anoisesrc=seed=2:color=brown")
+    c = tone(
+        "c.wav",
+        r"aevalsrc=0.5*sin(2*PI*t*330*pow(2\,floor(mod(t*3\,7))*5/12))"
+        r"+0.2*sin(2*PI*t*82):s=22050",
+    )
     fa, fb, fc = (media.audio_fingerprint(p) for p in (a, b, c))
     assert score.audio_similarity(fa, fb) >= get_settings().dup_audio_threshold
     assert score.audio_similarity(fa, fc) < get_settings().similar_audio_threshold
