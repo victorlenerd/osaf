@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block main %}
+{% set b = page.business %}
+{% set s = page.summary %}
+<article itemscope>
+<header class="biz-head">
+  <p class="eyebrow">{{ category_label }}{% if b.city %} · {{ b.city }}{% endif %} · {{ country }}</p>
+  <h1>{{ b.name }}</h1>
+  <p class="muted">{{ b.formatted_address }}</p>
+  <p class="stats">
+    <strong>{{ plural(b.review_count, 'review') }}</strong>
+    {% if b.review_count %} · {{ recommend_pct }}% recommend{% endif %}
+    {% if b.average_rating is not none %} · <span class="stars" aria-label="{{ b.average_rating }} out of 5 stars">{{ stars(b.average_rating) }}</span> {{ '%.1f' % b.average_rating }}/5 from {{ plural(b.rating_count, 'rating') }}{% endif %}
+    {% if maps_url %} · <a href="{{ maps_url }}" rel="nofollow noopener">Open in Google Maps</a>{% endif %}
+  </p>
+</header>
+
+<section class="card answer" aria-label="Summary">
+  <p class="lead">{{ answer }}</p>
+  {% if s and s.headline %}<p class="headline">“{{ s.headline }}”</p>{% endif %}
+  <div class="cols">
+  {% if s and s.recurring_praise %}<div><h2>What people praise</h2><ul>{% for x in s.recurring_praise %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if s and s.recurring_complaints %}<div><h2>Common complaints</h2><ul>{% for x in s.recurring_complaints %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if s and s.standout_items %}<div><h2>Stand-outs</h2><ul>{% for x in s.standout_items %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
+  </div>
+  <p class="small muted">Summary of {{ plural(b.review_count, 'review') }} on Afefehub{% if updated %}, updated {{ updated }}{% endif %}. Summaries are written by AI from the reviews below.</p>
+</section>
+
+<section aria-labelledby="reviews-title">
+  <h2 id="reviews-title">Reviews of {{ b.name }}</h2>
+  {% for r in page.reviews %}{% set e = r.extraction %}
+  <article class="card review" id="review-{{ r.review_id }}">
+    <header>
+      <p class="who"><strong>{{ r.reviewer_display_name or 'Afefehub reviewer' }}</strong> {{ flag(r.reviewer_country) }}
+        <span class="muted">· {{ 'Video review' if r.source == 'reel' else 'Voice note' }} · <time datetime="{{ r.created_at }}">{{ date(r.created_at) }}</time></span></p>
+      <p class="verdict">
+        {% if e.rating %}<span class="stars" aria-label="{{ e.rating }} out of 5 stars">{{ stars(e.rating) }}</span> {{ e.rating }}/5 · {% endif %}
+        <span class="rec rec-{{ e.recommend }}">{{ {'yes': 'Recommends', 'no': 'Does not recommend', 'maybe': 'Maybe recommends'}[e.recommend] }}</span>
+      </p>
+    </header>
+    {% if e.one_line_summary %}<p class="one-line">{{ e.one_line_summary }}</p>{% endif %}
+    <div class="cols">
+    {% if e.good %}<div><h3>Good</h3><ul>{% for x in e.good %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if e.improve %}<div><h3>Could improve</h3><ul>{% for x in e.improve %}<li>{{ x }}</li>{% endfor %}</ul></div>{% endif %}
+    </div>
+    {% if r.source == 'reel' and r.reel_shortcode %}
+    <blockquote class="instagram-media" data-instgrm-permalink="https://www.instagram.com/reel/{{ r.reel_shortcode }}/" data-instgrm-version="14">
+      <a href="https://www.instagram.com/reel/{{ r.reel_shortcode }}/" rel="noopener">Watch the reel on Instagram</a>
+    </blockquote>
+    {% elif audio_urls.get(r.review_id) %}
+    <audio controls preload="none" src="{{ audio_urls[r.review_id] }}">Your browser cannot play this voice note.</audio>
+    {% endif %}
+  </article>
+  {% else %}
+  <p class="card muted">No reviews yet. Be the first.</p>
+  {% endfor %}
+</section>
+
+{% if b.source == 'google' %}
+<section id="google-reviews" class="card" data-nosnippet data-place-id="{{ b.business_id }}" data-api="{{ api }}" hidden></section>
+{% endif %}
+
+{% if related %}
+<nav class="card" aria-labelledby="more-title">
+  <h2 id="more-title">More {{ category_plural }} in {{ b.city or country }}</h2>
+  <ul class="links">{% for li in related %}<li><a href="{{ li.path }}">{{ li.business.name }}</a> <span class="muted">· {{ plural(li.business.review_count, 'review') }}</span></li>{% endfor %}</ul>
+  {% if hub_link %}<p><a href="{{ hub_link }}">See all {{ category_plural }} in {{ b.city or country }} →</a></p>{% endif %}
+</nav>
+{% endif %}
+</article>
+{% endblock %}
+{% block scripts %}
+{% if has_reels %}<script async src="https://www.instagram.com/embed.js"></script>{% endif %}
+{% if page.business.source == 'google' %}<script defer src="/seo.js"></script>{% endif %}
+{% endblock %}

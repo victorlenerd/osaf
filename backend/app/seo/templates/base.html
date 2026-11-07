@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<meta name="description" content="{{ description }}">
+<meta name="robots" content="{{ 'index,follow,max-image-preview:large,max-snippet:-1' if indexable else 'noindex,follow' }}">
+<link rel="canonical" href="{{ canonical }}">
+{% if md_url %}<link rel="alternate" type="text/markdown" href="{{ md_url }}" title="Markdown version">{% endif %}
+<meta name="theme-color" content="#ffc72c">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta property="og:site_name" content="Afefehub">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ og_title or title }}">
+<meta property="og:description" content="{{ description }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ site }}/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ og_title or title }}">
+<meta name="twitter:description" content="{{ description }}">
+<meta name="twitter:image" content="{{ site }}/og-image.png">
+<link rel="stylesheet" href="/seo.css">
+<script type="application/ld+json">{{ jsonld | safe }}</script>
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap row">
+    <a href="/" class="logo" aria-label="Afefehub home"><img src="/logo.svg" alt="Afefehub" width="132" height="32"></a>
+    <nav aria-label="Main" class="nav"><a href="/">Search</a><a href="/places">Places</a><a href="/about">About</a></nav>
+  </div>
+</header>
+<main class="wrap">
+{% if breadcrumbs %}
+<nav aria-label="Breadcrumb" class="crumbs"><ol>
+{% for label, path in breadcrumbs %}<li>{% if loop.last %}<span aria-current="page">{{ label }}</span>{% else %}<a href="{{ path }}">{{ label }}</a>{% endif %}</li>{% endfor %}
+</ol></nav>
+{% endif %}
+{% block main %}{% endblock %}
+<section class="card howto" aria-labelledby="howto-title">
+  <h2 id="howto-title">Been here? Add your review</h2>
+  <p>Post a public Instagram reel about your visit, or record a voice note, and send it to Afefehub on WhatsApp. No app and no sign-up. Our agent checks it, transcribes it and adds it to the business page.</p>
+  {% if whatsapp_number %}<p><a class="wa" href="https://wa.me/{{ whatsapp_digits }}">WhatsApp {{ whatsapp_number }}</a></p>{% endif %}
+</section>
+</main>
+<footer class="site-footer">
+  <div class="wrap row">
+    <p>Built by <a href="https://1ctech.ca">1CTECH</a> · <a href="/about/methodology">How reviews are verified and ranked</a></p>
+    <nav aria-label="Footer" class="nav"><a href="/about">About</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/data-deletion">Delete my data</a><a href="/llms.txt">llms.txt</a></nav>
+  </div>
+</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

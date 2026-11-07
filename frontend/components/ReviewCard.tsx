@@ -3,6 +3,7 @@ import { flagEmoji, formatDate } from "@/lib/format";
 import { countryName, languageName } from "@/lib/constants";
 import { RecommendBadge, SentimentDot, Tag } from "./Badges";
 import InstagramEmbed from "./InstagramEmbed";
+import Stars from "./Stars";
 import VoicePlayer from "./VoicePlayer";
 
 function Bullets({ title, items, tone }: { title: string; items: string[]; tone: "good" | "bad" }) {
@@ -37,6 +38,7 @@ export default function ReviewCard({ review }: { review: Review }) {
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <RecommendBadge value={x.recommend} />
+            {x.rating != null && <Stars rating={x.rating} withValue />}
             <SentimentDot sentiment={x.overall_sentiment} withLabel />
             <Tag>{languageName(x.language)}</Tag>
             {isVoice && <Tag>🎤 Voice review</Tag>}

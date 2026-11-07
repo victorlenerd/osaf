@@ -221,6 +221,27 @@ thank-you, never payment for a particular review. Reviews are public reels or vo
 is typed in. The terms, privacy policy and operator (1CTECH, Ontario, Canada) are published on the
 site.
 
+## Found on Google and by AI assistants
+
+Every reviewed business gets a crawlable page at `https://afefehub.com/b/<slug>`, rendered by the
+backend with schema.org data, plus a Markdown twin (`.md`), city and category rankings under
+`/places`, sitemaps and [`/llms.txt`](https://afefehub.com/llms.txt). See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#discovery-search-engines-and-ai-assistants).
+
+AI assistants can also query Afefehub directly:
+
+- **MCP server** (read-only, no auth, streamable HTTP): `https://api.afefehub.com/mcp`, with
+  tools `search_businesses`, `get_business`, `top_businesses` and `how_to_submit_review`.
+  Add it as a custom connector in Claude or ChatGPT (developer mode), or any MCP client.
+- **OpenAPI** for GPT Actions and other agents:
+  `https://api.afefehub.com/api/openapi-public.json`.
+
+Preview the rendered pages locally without AWS:
+
+```bash
+cd backend && python scripts/render_site.py --fixture --out /tmp/site
+```
+
 ## Roadmap
 
 - Content moderation pass (Muse Spark classification) with a `HELD` state and a human queue before
@@ -239,10 +260,10 @@ site.
 | Path | What |
 |---|---|
 | `backend/` | FastAPI service: WhatsApp webhook, pipeline, Muse Spark agent, public API, tests |
-| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage) |
+| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage), `render_site.py` (re-render every crawlable page; nightly), `ai_visibility.py` (does ChatGPT, Perplexity or Gemini cite Afefehub?) |
 | `frontend/` | Next.js static site (search, business pages, about, terms, privacy) and a zero-dependency mock API |
 | `infra/terraform/` | AWS: Route53, ACM, S3 + CloudFront, ECS Fargate + ALB, DynamoDB, OpenSearch, ECR, SSM, WAF |
-| `scripts/` | `deploy_backend.sh` (build, push by git SHA, roll ECS), `set_secrets.sh` (SSM secrets) |
+| `scripts/` | `deploy_backend.sh` (build, push by git SHA, roll ECS), `deploy_site.sh` (build and sync the site without touching backend-rendered pages), `set_secrets.sh` (SSM secrets) |
 | `brand/` | Logo sources and exported marks, lockups, social and app icons |
 | `docs/` | Architecture, production checklist, screenshots |
 

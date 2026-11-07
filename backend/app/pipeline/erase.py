@@ -25,6 +25,7 @@ from ulid import ULID
 from app.agent.summary import generate_summary
 from app.models import now_iso
 from app.pii import phone_hash, phone_label
+from app.seo import site as seo_site
 from app.store import dynamo, opensearch, s3
 
 log = logging.getLogger(__name__)
@@ -147,6 +148,9 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
     if business is None:
         dynamo.delete_business(business_id)
         opensearch.delete_business(business_id)
+        # The page must go too. A failure here fails the business so the operator retry
+        # (rebuild_businesses) runs it again; the nightly render also prunes it.
+        seo_site.remove_business_page(business_id)
         try:
             safe = business_id.replace("/", "_")
             report.objects += s3.delete_prefix(f"businesses/{safe}/summary_history/")
@@ -159,6 +163,8 @@ def _rebuild_business(report: ErasureReport, business_id: str) -> None:
     summary = generate_summary(business, reviews, None)
     dynamo.put_summary(business_id, summary)
     opensearch.upsert_business(business, summary)
+    # Re-render now: the cached page still shows the erased review until it is replaced.
+    seo_site.publish_business_page(business_id)
     report.businesses_rebuilt.append(business_id)
 
 

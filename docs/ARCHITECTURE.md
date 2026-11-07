@@ -80,6 +80,42 @@ browser streams and seeks directly).
 Terraform in `infra/terraform/`: Route53 zone, ACM, S3 + CloudFront (site), ECS Fargate + ALB
 (API), DynamoDB, OpenSearch (1 × t3.small), ECR, SSM parameters for secrets.
 
+## Discovery: search engines and AI assistants
+
+The Next.js site is a static export whose interactive business page renders in the browser, so
+crawlers that do not run JavaScript (GPTBot, ClaudeBot, PerplexityBot, meta-externalagent, and
+Googlebot on its first pass) would see an empty shell. The backend therefore renders a plain-HTML
+twin of every reviewed business and writes it into the site bucket (`backend/app/seo/`):
+
+- **Business pages** at `/b/<name>-<city>-<hash6>`: an answer-first paragraph (who, where, how
+  many reviews, recommend share, what people praise and complain about, last reviewed), the AI
+  summary and every published review, with schema.org JSON-LD (`LocalBusiness` subtype per
+  category, `Review` with `reviewRating` when the reviewer gave stars, `AggregateRating` only from
+  three rated reviews, `VideoObject` for reels, `BreadcrumbList`). A `.md` twin sits next to each.
+- **Hub pages** at `/places/<cc>[/<city>[/<category>]]`, ranked by the published formula
+  (`app/seo/model.py:score`, explained at `/about/methodology`). A hub is indexable only with
+  three or more reviewed businesses.
+- **Sitemaps** (`/sitemap.xml` index), **`/llms.txt`** and **`/llms-full.txt`** for AI agents, and
+  an IndexNow ping on change (Bing, which ChatGPT search and Copilot draw on).
+
+When: on publish (`pipeline/publish.py`, failure logged, never blocks the publish), on erasure
+(`pipeline/erase.py`: re-rendered without the erased review, or deleted; a failure fails the
+business so the operator retry runs it again), and nightly (`scripts/render_site.py` via
+EventBridge Scheduler, which also prunes stale pages). Business pages get a long edge TTL plus a
+CloudFront invalidation; hubs and sitemaps a 15-minute edge TTL.
+
+Never rendered, indexed or handed to agents: Google Places reviews and summaries (they load in the
+browser through `/seo.js`, inside a `data-nosnippet` section), phone numbers or hashes, and the
+fictional `afefe:demo-*` seed rows.
+
+**Direct access for agents.** `api.afefehub.com/mcp` is a stateless, read-only MCP server
+(`app/mcp_server.py`: `search_businesses`, `get_business`, `top_businesses`,
+`how_to_submit_review`); `api.afefehub.com/api/openapi-public.json` is a curated OpenAPI spec of
+the public read API for GPT Actions. Every result carries the canonical `url` to cite.
+
+**Shared bucket.** The frontend deploy must not delete backend-owned paths: use
+`scripts/deploy_site.sh`, never a bare `aws s3 sync --delete`.
+
 ## Weekly Instagram highlights
 
 `backend/scripts/weekly_highlights.py` turns the week's published reviews into a "Reviews of the

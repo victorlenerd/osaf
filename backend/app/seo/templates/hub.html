@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block main %}
+<header class="biz-head">
+  <h1>{{ hub.title }}</h1>
+  {% if intro %}<p class="lead">{{ intro }}</p>{% endif %}
+</header>
+{% if hub.children %}
+<nav class="card" aria-labelledby="browse-title">
+  <h2 id="browse-title">{{ browse_title }}</h2>
+  <ul class="links cols3">{% for c in hub.children %}<li><a href="{{ c.path }}">{{ c.label }}</a> <span class="muted">({{ c.count }})</span></li>{% endfor %}</ul>
+</nav>
+{% endif %}
+{% if hub.top %}
+<section aria-labelledby="ranked-title">
+  <h2 id="ranked-title">{{ 'Ranked by reviewers' if hub.level != 'root' else 'Top places' }}</h2>
+  <ol class="ranked">
+  {% for li in hub.top %}{% set b = li.business %}
+    <li class="card">
+      <h3><a href="{{ li.path }}">{{ b.name }}</a></h3>
+      <p class="muted small">{{ category(b.category) }}{% if b.city %} · {{ b.city }}{% endif %} · {{ plural(b.review_count, 'review') }} · {{ pct(b) }}% recommend{% if b.average_rating is not none %} · {{ '%.1f' % b.average_rating }}/5{% endif %}</p>
+      {% if li.summary and li.summary.headline %}<p>{{ li.summary.headline }}</p>{% endif %}
+    </li>
+  {% endfor %}
+  </ol>
+  <p class="small muted">Ranking: share of reviewers who recommend the place (with a small prior so one review cannot top the list), blended with the average star rating where reviewers gave one. <a href="/about/methodology">How ranking works</a>.</p>
+</section>
+{% endif %}
+{% endblock %}

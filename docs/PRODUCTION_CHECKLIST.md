@@ -56,6 +56,19 @@ All P0 code changes landed on 2026-10-31. Rollout order: `terraform apply` (new 
 - [ ] **Token rotation.** A long-lived user token expires after 60 days and `--preflight` then fails with Graph error 190; a Business Manager system-user token does not expire and is the right long-term credential. Put a reminder on the calendar until that switch is made.
 - [ ] The first `--publish` goes out for real (the API cannot delete a post; remove a wrong one in the Instagram app). Run it at a quiet time, or point the IG settings at a throwaway professional account connected to the same app for the first run.
 
+### Discovery (crawlable pages, AI agents)
+
+Rollout, in this order (each step is safe on its own):
+
+- [ ] `terraform apply` (task-role access to the site bucket's backend-owned paths and the CloudFront invalidation, env vars `SITE_BUCKET` / `CLOUDFRONT_DISTRIBUTION_ID` / `WHATSAPP_PUBLIC_NUMBER` / `INDEXNOW_KEY`, the `/mcp` WAF rule, the nightly `render-site` schedule). Set `indexnow_key` in `prod.auto.tfvars` first (`openssl rand -hex 16`).
+- [ ] Roll the backend (`scripts/deploy_backend.sh`).
+- [ ] Backfill: run `python scripts/render_site.py` once in a one-off task (writes the `SLUG#` pointers, every page, sitemaps, llms.txt). Check `https://afefehub.com/sitemap.xml`, `/llms.txt` and one `/b/<slug>` page with `curl -A GPTBot`.
+- [ ] Deploy the site **only** with `scripts/deploy_site.sh` from now on: a bare `aws s3 sync out/ --delete` deletes every rendered page.
+- [ ] Google Search Console: Domain property (verification TXT in Route53, nothing else in the zone touched), submit `/sitemap.xml`, run the Rich Results Test on a business page.
+- [ ] Bing Webmaster Tools: import from Search Console, submit the sitemap (Bing feeds ChatGPT search, Copilot and DuckDuckGo).
+- [ ] Custom GPT "Afefehub" with Actions from `/api/openapi-public.json`, privacy URL `https://afefehub.com/privacy`; list the MCP server in the MCP Registry and submit it to the Claude connector directory.
+- [ ] Weekly: `python scripts/ai_visibility.py --out ai_visibility.jsonl` with whichever provider keys are available; monthly: Search Console coverage and rich-result errors.
+
 ### Infrastructure
 
 - [x] TLS 1.2+ on ALB and CloudFront, HTTP→HTTPS redirect, `drop_invalid_header_fields`, ECS circuit breaker with rollback, ECR scan on push, remote state with versioning and lock.

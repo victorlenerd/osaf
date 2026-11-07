@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app.agent.extract import run_extraction_turn
 from app.agent.summary import generate_summary, summarize_google_reviews
 from app.models import (
@@ -404,3 +406,25 @@ def test_google_summary_skips_model_without_textual_reviews():
     bare = GPLACE.model_copy(update={"reviews": [GoogleReview(rating=4)]})
     s = summarize_google_reviews(bare, chat=chat)
     assert chat.calls == [] and s.reviews_considered == 0 and s.overall_sentiment == "positive"
+
+
+@pytest.mark.parametrize(
+    "raw,expected", [(4, 4), ("5", 5), (4.4, 4), (0, None), (9, None), (None, None), ("five", None)]
+)
+def test_coerce_normalises_rating(raw, expected):
+    from app.agent.extract import _coerce
+
+    ext = _coerce(
+        {
+            "business": {
+                "place_id": "afefe:x-y",
+                "name": "X",
+                "formatted_address": "a",
+                "country": "ng",
+            },
+            "business_name_as_said": "x",
+            "rating": raw,
+        },
+        {},
+    )
+    assert ext.rating == expected

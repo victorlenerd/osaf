@@ -104,6 +104,48 @@ resource "aws_wafv2_web_acl" "api" {
     }
   }
 
+  # 2b. The public MCP server (/mcp): read-only, but each call fans out to DynamoDB/OpenSearch.
+  rule {
+    name     = "mcp-rate-limit"
+    priority = 5
+
+    action {
+      block {
+        custom_response {
+          response_code = 429
+        }
+      }
+    }
+
+    statement {
+      rate_based_statement {
+        limit                 = var.waf_mcp_rate_limit
+        evaluation_window_sec = 300
+        aggregate_key_type    = "IP"
+
+        scope_down_statement {
+          byte_match_statement {
+            search_string         = "/mcp"
+            positional_constraint = "STARTS_WITH"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.waf_metric_prefix}McpRateLimit"
+      sampled_requests_enabled   = true
+    }
+  }
+
   # 3. AWS managed baseline (bad bots, request smuggling, oversize bodies, ...), everywhere
   #    except the webhook path.
   rule {

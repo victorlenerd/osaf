@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     public_site_url: str = "https://afefehub.com"
     public_api_url: str = "https://api.afefehub.com"  # absolute base for URLs the API hands out
 
+    # Crawlable pages (app/seo): the backend writes business and hub pages, sitemaps and
+    # llms.txt into the site bucket. Empty site_bucket turns page publishing off (dev, tests).
+    site_bucket: str = ""
+    cloudfront_distribution_id: str = ""  # invalidated when a business page changes
+    indexnow_key: str = ""  # https://www.indexnow.org key; pings Bing & co. on change (prod only)
+
     # pipeline tuning
     max_clarification_rounds: int = 3
     face_coverage_threshold: float = 0.5

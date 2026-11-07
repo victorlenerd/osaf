@@ -13,6 +13,7 @@ Extract:
 2. When and where they visited (reviewer's words; ISO date only if clearly derivable).
 3. What was good. 4. What the business could improve. 5. Would they recommend it: yes / no / maybe.
 6. The business category (closed list) and 3-8 keywords (dishes, products, services, vibe).
+7. A star rating out of 5, ONLY if the reviewer said one ("I give it 4 stars", "8 over 10" -> 4). Never infer it from tone, and never ask for it: the reviewer is offered a rating when they confirm.
 
 Rules:
 - The transcript may be in Nigerian Pidgin, Yoruba, Igbo, Hausa, Swahili, French, Arabic, Twi, etc. Understand it, keep business_name_as_said verbatim, write fields in plain English.

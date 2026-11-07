@@ -20,6 +20,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "phonenumbers>=8.13",
     "pillow>=10.4",
+    "jinja2>=3.1",
+    "mcp>=2.3,<3",
 ]
 
 [project.optional-dependencies]
@@ -47,4 +49,5 @@ build-backend = "setuptools.build_meta"
 include = ["app*"]
 
 [tool.setuptools.package-data]
+"app.seo" = ["templates/*"]
 "app.social" = ["assets/*", "assets/fonts/*"]

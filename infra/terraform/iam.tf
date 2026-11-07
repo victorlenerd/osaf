@@ -84,6 +84,43 @@ data "aws_iam_policy_document" "task" {
     actions   = ["es:ESHttpGet", "es:ESHttpHead", "es:ESHttpPost", "es:ESHttpPut", "es:ESHttpDelete"]
     resources = ["${local.opensearch_domain_arn}/*"]
   }
+  # Crawlable pages (backend/app/seo/site.py): only the prefixes and files the backend owns in
+  # the site bucket. The Next.js export owns everything else there.
+  statement {
+    sid       = "SiteBucketList"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.site.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["b/*", "places/*"]
+    }
+  }
+  statement {
+    sid     = "SiteBucketPages"
+    actions = ["s3:PutObject", "s3:DeleteObject"]
+    resources = concat(
+      [
+        "${aws_s3_bucket.site.arn}/b/*",
+        "${aws_s3_bucket.site.arn}/places/*",
+        "${aws_s3_bucket.site.arn}/places.html",
+        "${aws_s3_bucket.site.arn}/places.md",
+        "${aws_s3_bucket.site.arn}/sitemap.xml",
+        "${aws_s3_bucket.site.arn}/sitemaps/*",
+        "${aws_s3_bucket.site.arn}/llms.txt",
+        "${aws_s3_bucket.site.arn}/llms-full.txt",
+      ],
+      var.indexnow_key != "" ? ["${aws_s3_bucket.site.arn}/${var.indexnow_key}.txt"] : [],
+    )
+  }
+  dynamic "statement" {
+    for_each = var.dns_delegated ? [1] : []
+    content {
+      sid       = "SiteInvalidation"
+      actions   = ["cloudfront:CreateInvalidation"]
+      resources = [aws_cloudfront_distribution.site[0].arn]
+    }
+  }
   # Secrets are injected by the execution role at task start; the app never reads SSM itself.
   # ECS Exec (aws ecs execute-command) for debugging a running task.
   statement {

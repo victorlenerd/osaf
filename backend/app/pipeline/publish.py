@@ -11,6 +11,8 @@ from app.agent.summary import generate_summary
 from app.config import get_settings
 from app.models import Conversation, Review, Submission, SubmissionState, now_iso
 from app.pipeline.quota import phone_hash, slots_line, weekly_quota
+from app.seo import site as seo_site
+from app.seo.slugs import business_path
 from app.store import dynamo, opensearch, s3
 from app.whatsapp import client as wa
 
@@ -19,8 +21,12 @@ __all__ = ["business_url", "phone_hash", "publish_submission"]
 log = logging.getLogger(__name__)
 
 
-def business_url(business_id: str) -> str:
-    return f"{get_settings().public_site_url}/business?id={business_id}"
+def business_url(business_id: str, slug: str | None = None) -> str:
+    """The canonical, crawlable page when the slug is known; the interactive page otherwise."""
+    site = get_settings().public_site_url.rstrip("/")
+    if slug:
+        return f"{site}{business_path(slug)}"
+    return f"{site}/business?id={business_id}"
 
 
 def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
@@ -67,6 +73,10 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
         opensearch.upsert_business(business, summary)
     except Exception:  # noqa: BLE001
         log.exception("opensearch upsert failed for %s", business.business_id)
+    try:
+        seo_site.publish_business_page(business.business_id)
+    except Exception:  # noqa: BLE001
+        log.exception("page render failed for %s", business.business_id)
 
     sub.review_id = review_id
     sub.business_id = business.business_id
@@ -90,7 +100,7 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     wa.send_text(
         sub.phone,
         f"Published! 🎉 Your review of {business.name} is live:\n"
-        f"{business_url(business.business_id)}\n\n"
+        f"{business_url(business.business_id, business.slug)}\n\n"
         f"That's review #{business.review_count} for this business. ⭐ +{points} points, "
         f"you now have {total}.\n\n{slots_line(q)} Send another reel or voice note anytime; "
         "text *points* to check your balance.",

@@ -69,6 +69,9 @@ def help_text() -> str:
 CONFIRM_WORDS = re.compile(
     r"^\s*(ok|okay|yes|yep|yeah|publish|confirm|go|👍|✅|correct|sure)\b", re.I
 )
+# A star rating sent while confirming: "4", "4 stars", "4/5", "⭐⭐⭐⭐".
+RATING_REPLY = re.compile(r"^\s*([1-5])\s*(stars?|⭐|/\s*5|out of 5)?\s*[.!]*\s*$", re.I)
+STAR_EMOJI_REPLY = re.compile(r"^\s*(⭐\ufe0f?){1,5}\s*$")
 POINTS_WORDS = re.compile(r"^\s*(my\s+)?(points|balance|score)\s*[?!.]*\s*$", re.I)
 # "delete my data", "erase my reviews", "remove my account", "delete everything", "forget me"
 DELETE_WORDS = re.compile(
@@ -317,6 +320,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
             _extract_and_route(active, conv, latest_answer=text)
             return
         if active.state == SubmissionState.CONFIRMING:
+            stars = rating_from_reply(text)
+            if stars and active.extraction is not None:
+                active.extraction.rating = stars
+                s3.put_json(
+                    active.extraction.model_dump(), s3.Keys.extraction(active.submission_id)
+                )
+                _set_state(active, SubmissionState.EXTRACTING, f"rated {stars}/5; publishing")
+                publish.publish_submission(active, conv)
+                return
             if CONFIRM_WORDS.match(text):
                 _set_state(active, SubmissionState.EXTRACTING, "confirmed; publishing")
                 publish.publish_submission(active, conv)
@@ -364,6 +376,15 @@ def _process_inbound(phone: str, msg: dict, display_name: str | None) -> None:
 
     # 5. anything else
     wa.send_text(phone, help_text())
+
+
+def rating_from_reply(text: str) -> int | None:
+    """1-5 when the whole reply is a star rating, else None."""
+    if m := RATING_REPLY.match(text):
+        return int(m.group(1))
+    if STAR_EMOJI_REPLY.match(text):
+        return text.count("⭐")
+    return None
 
 
 # ----------------------------------------------------------------- erasure
@@ -715,6 +736,15 @@ def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: st
     sub.extraction = ext
     s3.put_json(ext.model_dump(), s3.Keys.extraction(sub.submission_id))
     rec = {"yes": "Yes 👍", "no": "No 👎", "maybe": "Maybe 🤷"}[ext.recommend]
+    if ext.rating:
+        rating_line = f"Rating: {'⭐' * ext.rating} {ext.rating}/5\n\n"
+        reply_line = "Reply *OK* to publish, or tell me what to fix."
+    else:
+        rating_line = ""
+        reply_line = (
+            "Reply *1*-*5* to add a star rating and publish, *OK* to publish without stars, "
+            "or tell me what to fix."
+        )
     good = "\n".join(f"• {g}" for g in ext.good[:3]) or "• (nothing noted)"
     improve = "\n".join(f"• {g}" for g in ext.improve[:3]) or "• (nothing noted)"
     when = f" ({ext.visit.when_text})" if ext.visit.when_text else ""
@@ -724,7 +754,7 @@ def _extract_and_route(sub: Submission, conv: Conversation, *, latest_answer: st
         f"🏷️ {ext.category.replace('_', ' ')}\n\n"
         f"👍 Good:\n{good}\n\n🔧 Could improve:\n{improve}\n\n"
         f"Recommend: {rec}\n\n"
-        "Reply *OK* to publish, or tell me what to fix."
+        f"{rating_line}{reply_line}"
     )
     sub.pending_question = summary
     _set_state(sub, SubmissionState.CONFIRMING)

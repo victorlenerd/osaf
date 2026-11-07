@@ -310,7 +310,18 @@ def _coerce(args: dict, known: dict[str, PlaceCandidate]) -> ReviewExtraction:
     args["keywords"] = [k for k in (args.get("keywords") or []) if isinstance(k, str)][:10]
     args["good"] = [g for g in (args.get("good") or []) if isinstance(g, str)][:6]
     args["improve"] = [g for g in (args.get("improve") or []) if isinstance(g, str)][:6]
+    args["rating"] = _rating(args.get("rating"))
     return ReviewExtraction(**args)
+
+
+def _rating(value) -> int | None:
+    """A 1-5 integer, or None for anything missing or out of range (the model may send 0, 4.5
+    or a string)."""
+    try:
+        n = round(float(value))
+    except (TypeError, ValueError):
+        return None
+    return n if 1 <= n <= 5 else None
 
 
 def _fallback_question(args: dict, candidates: list[PlaceCandidate]) -> str:
