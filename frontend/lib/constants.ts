@@ -84,7 +84,7 @@ export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL || "";
  */
 export const PAYOUTS_ENABLED = process.env.NEXT_PUBLIC_PAYOUTS_ENABLED === "true";
 
-/** The scheme in force before the payout launch: a flat reward per published review. Remove with CurrentRewardsCard. */
+/** The scheme in force before the payout launch (a flat reward per published review), stated on the "coming soon" card. Remove at launch. */
 export const POINTS_PER_REVIEW = 10;
 export const REWARD_POINTS = 100;
 export const REWARD_LABEL = "$10 Amazon gift card";

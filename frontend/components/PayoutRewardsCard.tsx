@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { NGN_PER_POINT, PAYOUT_POOLS, TIERS, WEEKLY_REVIEW_LIMIT, naira } from "@/lib/payouts";
-import { WHATSAPP_NUMBER } from "@/lib/constants";
+import { POINTS_PER_REVIEW, REWARD_LABEL, REWARD_POINTS, WHATSAPP_NUMBER } from "@/lib/constants";
 import WhatsAppIcon from "./WhatsAppIcon";
 
 const STEPS: { title: string; body: string }[] = [
@@ -9,22 +9,41 @@ const STEPS: { title: string; body: string }[] = [
   { title: "Get paid monthly", body: "A person checks every entry, then we send a bank transfer to your Nigerian account." },
 ];
 
-export default function PayoutRewardsCard() {
+/**
+ * The payout programme on the home page. Before launch (`comingSoon`) it is announced as coming,
+ * and the scheme in force under the current Terms is stated alongside it.
+ */
+export default function PayoutRewardsCard({ comingSoon = false }: { comingSoon?: boolean }) {
   const waHref = WHATSAPP_NUMBER ? `https://wa.me/${WHATSAPP_NUMBER.replace(/[^\d]/g, "")}?text=${encodeURIComponent("points")}` : undefined;
 
   return (
     <section className="card overflow-hidden" aria-labelledby="rewards-title">
       <div className="p-5 sm:p-8">
         <div className="max-w-xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] muted">Reviewer payouts · Nigeria</p>
+          <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] muted">
+            {comingSoon && (
+              <span className="rounded-full px-2 py-0.5 tracking-normal" style={{ background: "var(--accent)", color: "var(--accent-fg)" }}>
+                Coming soon
+              </span>
+            )}
+            Reviewer payouts · Nigeria
+          </p>
           <h2 id="rewards-title" className="font-display mt-2 text-xl font-semibold sm:text-2xl" style={{ color: "var(--brand)" }}>
-            Earn up to {naira(NGN_PER_POINT)} a point, paid monthly.
+            {comingSoon ? "Up" : "Earn up"} to {naira(NGN_PER_POINT)} a point, paid monthly.
           </h2>
           <p className="mt-2 text-sm leading-relaxed muted">
-            Review businesses in Nigeria and earn points for every review you enter, glowing or grumpy. Up to {WEEKLY_REVIEW_LIMIT} reviews
-            a week.
+            {comingSoon
+              ? "We're starting monthly cash payouts for reviews of businesses in Nigeria, glowing or grumpy. Here's how they will work."
+              : `Review businesses in Nigeria and earn points for every review you enter, glowing or grumpy. Up to ${WEEKLY_REVIEW_LIMIT} reviews a week.`}
           </p>
         </div>
+
+        {comingSoon && (
+          <p className="mt-4 rounded-xl border px-4 py-3 text-sm leading-relaxed" style={{ borderColor: "var(--color-yellow-200)", background: "var(--color-yellow-50)" }}>
+            <strong>Payouts haven&rsquo;t started yet.</strong> Until they do, every published review earns {POINTS_PER_REVIEW} points under
+            our current Terms, and {REWARD_POINTS} points earns a {REWARD_LABEL}.
+          </p>
+        )}
 
         <ul className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Points per review">
           {TIERS.map((t) => (
@@ -95,17 +114,17 @@ export default function PayoutRewardsCard() {
               style={{ background: "#25D366", color: "#062b14" }}
             >
               <WhatsAppIcon size={18} />
-              Text &ldquo;points&rdquo; to see your entries
+              Text &ldquo;points&rdquo; to see your {comingSoon ? "balance" : "entries"}
             </a>
           ) : (
             <span className="text-sm muted">
-              Text <strong>points</strong> to the Afefehub WhatsApp number to see your entries.
+              Text <strong>points</strong> to the Afefehub WhatsApp number to see your {comingSoon ? "balance" : "entries"}.
             </span>
           )}
           <p className="text-xs muted">
             Same points for every opinion: a thank-you for taking part, never payment for what you say.{" "}
             <Link href="/payouts" className="underline">
-              How payouts work
+              {comingSoon ? "How payouts will work" : "How payouts work"}
             </Link>
           </p>
         </div>

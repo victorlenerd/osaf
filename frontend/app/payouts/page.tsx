@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import WhatsAppIcon from "@/components/WhatsAppIcon";
-import { PAYOUTS_ENABLED, WHATSAPP_NUMBER } from "@/lib/constants";
+import { PAYOUTS_ENABLED, POINTS_PER_REVIEW, REWARD_LABEL, REWARD_POINTS, WHATSAPP_NUMBER } from "@/lib/constants";
 import {
   AFEFEHUB_IG,
   CODE_DAYS,
@@ -144,22 +143,37 @@ function Section({ id, title, children }: { id: string; title: string; children:
 }
 
 export default function PayoutsPage() {
-  // Before launch day the page does not exist (and nothing links to it).
-  if (!PAYOUTS_ENABLED) notFound();
+  // Before launch day the page describes the programme as coming, and says what applies today.
+  const comingSoon = !PAYOUTS_ENABLED;
   const wa = WHATSAPP_NUMBER.replace(/[^\d]/g, "");
 
   return (
     <div className="max-w-3xl pt-8 sm:pt-14">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent-ink)" }}>
+      <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--accent-ink)" }}>
+        {comingSoon && (
+          <span className="rounded-full px-2 py-0.5 tracking-normal" style={{ background: "var(--accent)", color: "var(--accent-fg)" }}>
+            Coming soon
+          </span>
+        )}
         Reviewer payouts · Nigeria
       </p>
       <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl" style={{ color: "var(--brand)" }}>
         Get paid for honest reviews.
       </h1>
       <p className="mt-5 text-lg leading-relaxed muted">
-        Review businesses in Nigeria on Afefehub and earn points for every review you enter, glowing or grumpy. Each point is worth up to{" "}
-        {naira(NGN_PER_POINT)}, paid once a month by bank transfer.
+        {comingSoon ? "Soon you'll be able to review" : "Review"} businesses in Nigeria on Afefehub and earn points for every review you
+        enter, glowing or grumpy. Each point is worth up to {naira(NGN_PER_POINT)}, paid once a month by bank transfer.
       </p>
+      {comingSoon && (
+        <div className="card mt-6 p-5" role="note">
+          <p className="font-semibold">Payouts haven&rsquo;t started yet.</p>
+          <p className="mt-1 text-sm leading-relaxed muted">
+            This page describes how they will work. We&rsquo;ll post the start date here before they begin, and the full rules will be
+            added to our <Link href="/terms">Terms</Link>. Until then nothing below applies yet: every published review earns{" "}
+            {POINTS_PER_REVIEW} points under our current Terms, and {REWARD_POINTS} points earns a {REWARD_LABEL}.
+          </p>
+        </div>
+      )}
 
       <Section id="points-title" title="Points per review">
         <ul className="mt-5 grid gap-3 sm:grid-cols-3" aria-label="Points per review">
@@ -297,11 +311,12 @@ export default function PayoutsPage() {
             Ready to start?
           </p>
           <p className="mt-1 text-sm muted">
-            Send your first voice note or reel link to {WHATSAPP_NUMBER}. The full rules are in our{" "}
+            Send your first voice note or reel link to {WHATSAPP_NUMBER}.{" "}
+            {comingSoon ? "Our current" : "The full rules are in our"}{" "}
             <Link href="/terms" className="underline">
               Terms
-            </Link>
-            .
+            </Link>{" "}
+            {comingSoon ? "apply until payouts start." : ""}
           </p>
         </div>
         <a
