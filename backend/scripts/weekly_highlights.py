@@ -1,4 +1,9 @@
-"""Weekly "Reviews of the week" Instagram carousel: pick, render, caption. Dry run by default.
+"""Weekly "Reviews of the week" on Instagram: pick, render, caption. Dry run by default.
+
+Two kinds of post per week: the round-up carousel (cover, one slide per review, closing CTA),
+and then a Reel of its own for each review in it, playing that reviewer's whole recording (the
+voice note, or the reel's soundtrack) under the review card with a waveform that fills in as it
+plays. --no-reels makes the carousel only.
 
 Real data (read-only DynamoDB queries; needs AWS credentials, e.g. AWS_PROFILE=prod) and Muse
 Spark ranking (MODEL_API_KEY in the repo-root .env; run from the repo root):
@@ -10,20 +15,24 @@ Spark ranking (MODEL_API_KEY in the repo-root .env; run from the repo root):
     ... --no-model                                            # heuristic order, no model call
     ... --pick <id>,<id>                                      # hand-picked, in slide order
 
-Sample with no AWS and no model, from the demo fixture:
+The Reels read each pick's audio from S3 (read-only). --audio-dir DIR uses local files named
+<review_id>.<m4a|mp4|ogg|wav|...> instead; the demo fixture has no audio, so it needs one
+(or --no-reels):
 
     .venv/bin/python scripts/weekly_highlights.py --from-fixture scripts/demo_seed.json \\
-        --since 2026-10-18 --until 2026-10-27
+        --since 2026-10-18 --until 2026-10-27 --audio-dir <dir>
 
-Outputs slide-NN.jpg, preview.png (contact sheet), caption.txt and picks.json in --out
-(default .local/weekly/<since>_<until> at the repo root). Nothing leaves the machine unless:
+Outputs slide-NN.jpg, preview.png (contact sheet), caption.txt and picks.json in --out (default
+.local/weekly/<since>_<until> at the repo root), plus reels/<review_id>/ with reel.mp4,
+reel-cover.jpg, reel-preview.png and caption.txt per review. Nothing leaves the machine unless:
 
     ... --preflight        # read-only: which IG account the token posts as, and today's quota
-    ... --publish [--yes]  # upload the slides to S3, publish the carousel through the Graph API
+    ... --publish [--yes]  # upload to S3, publish the carousel then each Reel (Graph API)
                            # (asks for a typed "yes" first; --yes skips that for automation)
 
---publish needs IG_USER_ID and IG_ACCESS_TOKEN (root .env locally, SSM in prod). It writes
-published.json next to the slides and to s3://<media bucket>/social/weekly/<window>/.
+--publish needs IG_USER_ID and IG_ACCESS_TOKEN (root .env locally, SSM in prod). Each post is
+recorded in published.json (next to the output and in s3://<media bucket>/social/weekly/<window>/)
+as soon as it is live; a rerun skips whatever either copy records.
 """
 
 from __future__ import annotations
@@ -31,16 +40,21 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import get_settings  # noqa: E402
-from app.models import Review, now_iso  # noqa: E402
+from app.models import Review  # noqa: E402
 from app.social.candidates import Candidate, select_candidates, window_from_dates  # noqa: E402
-from app.social.caption import assert_caption_ok, build_caption  # noqa: E402
+from app.social.caption import (  # noqa: E402
+    assert_caption_ok,
+    build_caption,
+    build_review_caption,
+)
 from app.social.flags import flag_emoji  # noqa: E402
-from app.social.instagram import InstagramPublishError, client_from_settings, publish_carousel  # noqa: E402
+from app.social.instagram import InstagramPublishError, client_from_settings  # noqa: E402
 from app.social.rank import Pick, Picks, RankResult, rank, read_picks, write_picks  # noqa: E402
 from app.social.render import render_carousel  # noqa: E402
 
@@ -82,6 +96,14 @@ def _parser() -> argparse.ArgumentParser:
     sel.add_argument("--min", type=int, default=3, help="warn below this many (default 3)")
     sel.add_argument("--no-model", action="store_true", help="heuristic order, no Muse Spark")
     out = ap.add_argument_group("output")
+    out.add_argument("--no-reels", action="store_true", help="the carousel only, no Reels")
+    out.add_argument("--audio-dir", type=Path, help="Reels: local <review_id>.<ext> audio files")
+    out.add_argument(
+        "--max-seconds",
+        type=float,
+        default=870.0,
+        help="Reels: cut a recording longer than this (default 870, under IG's 15 min)",
+    )
     out.add_argument("--no-flags", action="store_true", help="offline: ISO chips, no Twemoji")
     out.add_argument("--hook", help="first line of the caption (overrides the model's)")
     out.add_argument("--wa-number", help="public WhatsApp number as displayed (default: settings)")
@@ -91,7 +113,7 @@ def _parser() -> argparse.ArgumentParser:
     pub.add_argument(
         "--preflight", action="store_true", help="check the IG token and quota, then exit"
     )
-    pub.add_argument("--publish", action="store_true", help="upload to S3 and publish the carousel")
+    pub.add_argument("--publish", action="store_true", help="upload to S3 and publish the week")
     pub.add_argument("--yes", action="store_true", help="skip the typed confirmation (automation)")
     return ap
 
@@ -214,11 +236,59 @@ def main(argv: list[str] | None = None) -> int:
     for p in paths:
         print(f"  {p.name}  {p.stat().st_size // 1024} KB")
     print(f"  preview.png  caption.txt ({len(caption)} chars)  picks.json")
+
+    reels = [] if args.no_reels else render_reels(picks, args, window, out, wa_number, site_url)
     if not args.publish:
         print("\nnot happy with a pick? rerun with --exclude <id>; happy? add --publish")
         return 0
     run_id = f"{window.since[:10]}_{window.until[:10]}"
-    return publish(settings, paths, caption, out, run_id=run_id, assume_yes=args.yes)
+    return publish(settings, paths, caption, reels, out, run_id=run_id, assume_yes=args.yes)
+
+
+def render_reels(
+    picks: list[Candidate], args, window, out: Path, wa_number: str, site_url: str
+) -> list:
+    """One Reel per pick with that review's whole recording, from --audio-dir or S3, into
+    out/reels/<review_id>/. A pick with no audio keeps its slide and just gets no Reel."""
+    from app.social import audio as au
+    from app.social.reel import render_review_reel
+    from app.social.weekly_publish import ReelJob
+
+    jobs: list[ReelJob] = []
+    print(f"\nreels   one per review, whole recording (cut past {args.max_seconds:.0f} s)")
+    with tempfile.TemporaryDirectory(dir=out) as tmp:
+        for c in picks:
+            if args.audio_dir:
+                sources = au.local_sources(c, args.audio_dir)
+            elif args.from_fixture:
+                sources = iter(())
+            else:
+                sources = au.s3_sources(c, Path(tmp))
+            try:
+                src, clip = au.first_clip(c.review_id, sources, max_s=args.max_seconds)
+            except au.ReviewAudioError as e:
+                print(f"  skip  {c.review_id:<28} {e}: slide only", file=sys.stderr)
+                continue
+            dest = out / "reels" / c.review_id
+            res = render_review_reel(
+                c, clip, window, dest, wa_number=wa_number, site_url=site_url,
+                flag_fetch=not args.no_flags, flag_cache=out / ".flags",
+            )  # fmt: skip
+            cap = build_review_caption(c, window, wa_number=wa_number, site_url=site_url)
+            assert_caption_ok(cap)
+            (dest / "caption.txt").write_text(cap + "\n")
+            cut = " (cut)" if clip.end_ms < src.duration_ms else ""
+            size_mb = res.video.stat().st_size / 1_000_000
+            print(
+                f"  reel  {c.review_id:<28} {c.business_name[:24]:<26}"
+                f"{res.duration_s:6.1f} s{cut}  {size_mb:.1f} MB"
+            )
+            jobs.append(
+                ReelJob(c.review_id, c.business_name, res.video, res.cover, cap, res.duration_s)
+            )
+    if jobs:
+        print(f"  -> {out / 'reels'}")
+    return jobs
 
 
 def preflight(settings) -> int:
@@ -239,11 +309,26 @@ def preflight(settings) -> int:
 
 
 def publish(
-    settings, paths: list[Path], caption: str, out: Path, *, run_id: str, assume_yes: bool
+    settings,
+    slides: list[Path],
+    caption: str,
+    reels: list,
+    out: Path,
+    *,
+    run_id: str,
+    assume_yes: bool,
 ) -> int:
-    """Upload the slides to S3, publish the carousel, record where it went."""
+    """Publish the carousel, then each Reel; record each one as it lands."""
+    from app.social.weekly_publish import merge_records, new_record, pending, publish_week
     from app.store import s3
 
+    rec_path = out / "published.json"
+    local = json.loads(rec_path.read_text()) if rec_path.exists() else None
+    try:  # the S3 copy is the durable one: a rerun from another machine must see it too
+        remote = s3.get_json_or_none(s3.Keys.social_record(run_id))
+    except Exception as e:  # noqa: BLE001
+        print(f"publish aborted: cannot read the S3 publish record: {e}", file=sys.stderr)
+        return 2
     try:
         client = client_from_settings(settings)
         me = client.me()
@@ -251,11 +336,34 @@ def publish(
     except InstagramPublishError as e:
         print(f"publish aborted: {e}", file=sys.stderr)
         return 2
+    record = merge_records(
+        new_record(run_id, me.get("username", ""), local),
+        new_record(run_id, me.get("username", ""), remote),
+    )
+    do_carousel, todo = pending(record, reels)
+    if not do_carousel and not todo:
+        print(f"\neverything for {run_id} is already published (see {rec_path})")
+        return 0
+
     used = quota.get("quota_usage", "?")
     total = (quota.get("config") or {}).get("quota_total", "?")
-    who = me.get("username", "?")
-    print(f"\nabout to publish {len(paths)} slides to @{who} (quota {used}/{total})")
-    print("caption:\n" + "\n".join("  | " + line for line in caption.splitlines()))
+    n_posts = int(do_carousel) + len(todo)
+    if isinstance(used, int) and isinstance(total, int) and total - used < n_posts:
+        print(
+            f"publish aborted: {n_posts} posts but only {total - used} left today", file=sys.stderr
+        )
+        return 2
+    print(
+        f"\nabout to publish {n_posts} post(s) to @{me.get('username', '?')} (quota {used}/{total})"
+    )
+    if do_carousel:
+        print(f"  carousel  {len(slides)} slides")
+        print("\n".join("    | " + line for line in caption.splitlines()))
+    else:
+        print("  carousel  already published, skipped")
+    for j in todo:
+        first = j.caption.splitlines()[0]
+        print(f"  reel      {j.business[:28]:<30}{j.duration_s:6.1f} s  | {first}")
     if not assume_yes:
         if not sys.stdin.isatty():
             print(
@@ -267,32 +375,29 @@ def publish(
             print("not published")
             return 1
 
-    urls: list[str] = []
-    for i, p in enumerate(paths, start=1):
-        key = s3.upload_file(p, s3.Keys.social_slide(run_id, i), content_type="image/jpeg")
-        urls.append(s3.presigned_url(key, expires=3600))
-    print(f"uploaded {len(urls)} slides to s3://{settings.media_bucket}/social/weekly/{run_id}/")
+    def upload(path: Path, key: str, content_type: str) -> str:
+        s3.upload_file(path, key, content_type=content_type)
+        return s3.presigned_url(key, expires=3 * 3600)
 
-    try:
-        media_id, link = publish_carousel(client, urls, caption, say=print)
-    except InstagramPublishError as e:
-        print(f"publish failed: {e}", file=sys.stderr)
+    def save(rec: dict) -> None:
+        rec_path.write_text(json.dumps(rec, indent=2, ensure_ascii=False) + "\n")
+        try:
+            s3.put_json(rec, s3.Keys.social_record(run_id))
+        except Exception as e:  # noqa: BLE001  (the post is live; the S3 copy is bookkeeping)
+            print(f"warning: could not write the S3 publish record: {e}", file=sys.stderr)
+
+    ok = publish_week(
+        client, record, run_id=run_id, slides=slides, caption=caption, reels=todo,
+        upload=upload, save=save,
+    )  # fmt: skip
+    print(f"\nrecord: {rec_path}")
+    if car := record.get("carousel"):
+        print(f"  carousel  {car.get('permalink') or car.get('media_id')}")
+    for r in record["reels"]:
+        print(f"  reel      {r['business'][:28]:<30}{r.get('permalink') or r['media_id']}")
+    if not ok:
+        print("some posts failed; rerun the same command to finish the rest", file=sys.stderr)
         return 2
-    record = {
-        "media_id": media_id,
-        "permalink": link,
-        "published_at": now_iso(),
-        "account": me.get("username", ""),
-        "run_id": run_id,
-        "slides": [p.name for p in paths],
-        "caption": caption,
-    }
-    (out / "published.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")
-    try:
-        s3.put_json(record, s3.Keys.social_record(run_id))
-    except Exception as e:  # noqa: BLE001  (the post is live; the record is bookkeeping)
-        print(f"warning: could not write the S3 publish record: {e}", file=sys.stderr)
-    print(f"\npublished: {link or media_id}")
     return 0
 
 

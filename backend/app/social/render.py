@@ -73,10 +73,11 @@ def _asset(name: str) -> Image.Image:
 
 
 class Canvas:
-    """ImageDraw wrapper working in 1080x1350 coordinates on a 2x bitmap."""
+    """ImageDraw wrapper in final-pixel coordinates (1080x1350 by default) on a 2x bitmap."""
 
-    def __init__(self, bg: str):
-        self.img = Image.new("RGB", (W * S, H * S), bg)
+    def __init__(self, bg: str, size: tuple[int, int] = (W, H)):
+        self.size = size
+        self.img = Image.new("RGB", (size[0] * S, size[1] * S), bg)
         self.d = ImageDraw.Draw(self.img)
 
     # -- primitives
@@ -190,7 +191,7 @@ class Canvas:
         return w
 
     def finish(self) -> Image.Image:
-        return self.img.resize((W, H), Image.Resampling.LANCZOS)
+        return self.img.resize(self.size, Image.Resampling.LANCZOS)
 
 
 def _footer(c: Canvas, idx: int, total: int, site_url: str) -> None:
@@ -292,10 +293,9 @@ STEPS = [
 ]
 
 
-def render_cta(idx: int, total: int, *, wa_number: str, site_url: str) -> Image.Image:
-    c = Canvas(YELLOW)
-    _card(c)
-    y = CARD[1] + PAD
+def cta_body(c: Canvas, y: float, *, wa_number: str, site_url: str) -> float:
+    """The "how to get reviewed" steps from ``y`` down, inside the card's inner column.
+    Shared by the carousel's last slide and the reel's last scene; returns the bottom y."""
     size, lines = c.fit("Reviewed a place on camera?", "bold", INNER_W, 2, start=64, floor=48)
     y = c.paragraph(INNER_X0, y, lines, "bold", size, INK, 1.12)
     c.text((INNER_X0, y + 12), "Get it on Afefehub in three steps.", "regular", 34, INK_700)
@@ -313,6 +313,13 @@ def render_cta(idx: int, total: int, *, wa_number: str, site_url: str) -> Image.
     label = f"WhatsApp  {wa_number}" if wa_number else f"WhatsApp us from {site_url}"
     c.pill(INNER_X0, y, label, bg=WA_GREEN, fg=WA_TEXT, size=34, height=72, pad_x=32)
     c.text((INNER_X0, y + 72 + 36), site_url, "bold", 34, INK)
+    return y + 72 + 36 + 34 * 1.2
+
+
+def render_cta(idx: int, total: int, *, wa_number: str, site_url: str) -> Image.Image:
+    c = Canvas(YELLOW)
+    _card(c)
+    cta_body(c, CARD[1] + PAD, wa_number=wa_number, site_url=site_url)
     _footer(c, idx, total, site_url)
     return c.finish()
 

@@ -87,6 +87,10 @@ class Candidate(BaseModel):
     summary: str
     good: list[str] = []
     created_at: str
+    # where the review's own audio lives, for the reel (no reviewer identifier in any of these)
+    submission_id: str = ""
+    audio_s3_key: str | None = None  # voice reviews: playable m4a
+    video_s3_key: str | None = None  # reel reviews: the archived source video
 
 
 def first_name(display_name: str | None) -> str:
@@ -117,6 +121,9 @@ def to_candidate(review: Review) -> Candidate:
         summary=summary,
         good=list(x.good),
         created_at=review.created_at,
+        submission_id=review.submission_id,
+        audio_s3_key=review.audio_s3_key,
+        video_s3_key=review.video_s3_key,
     )
 
 

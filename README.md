@@ -81,7 +81,7 @@ unstructured speech into a searchable record that works for businesses Google ha
 | **Ask on WhatsApp** | The number that takes reviews also recommends places. "Where can I get good suya in Lekki?" gets up to three reviewed businesses with their recommend rate, headline and link; a location pin narrows it to places nearby; follow-ups like "tell me more about 2" answer from what reviewers said. When Afefehub has nothing yet it offers Google listings, marked as unreviewed, and invites the person to review one. |
 | **Google fallback** | Empty result? One tap checks Google Places and shows the listing with an AI summary of up to five live Google reviews (attributed, never stored). |
 | **Reviewer payouts (Nigeria)** | Monthly cash payouts for reviews of Nigerian businesses: 5 pts per voice note, 10 pts per reel from its verified author (a reel someone else posted earns nothing) (the reviewer DMs a WhatsApp-issued code to @afefehub on Instagram from the posting account). After publishing, the agent asks whether to enter the review; only reviews entered with **ENTER** earn points, and only if they pass eligibility (Nigerian business, not a duplicate or near-duplicate by audio, video and transcript fingerprints, face check passed for reels, 3 reviews a week, reviewer not banned). 1 pt = up to ₦1,000 from monthly category pools (Shortlets, Restaurants and Hotels ₦1,000,000 each, everything else ₦500,000), paid pro rata when a pool is oversubscribed. A person reviews every entry before payment; payment is a bank transfer to a Nigerian account, or an Amazon gift card on request. Same points for every opinion. |
-| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag, and a how-to-submit closer. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
+| **Reviews of the week** | Each week the most interesting new reviews become a carousel on the Afefehub Instagram page: a cover, one slide per review with the reviewer's first name and country flag (a reel the sender did not post is credited to its Instagram handle instead), and a how-to-submit closer. Each review in it then gets a Reel of its own that plays the reviewer's whole recording under their review card, with a waveform that fills in as it plays. Muse Spark picks and orders them; a dry run renders a preview first, and publishing goes through the Instagram Content Publishing API. |
 
 <p align="center">
   <img src="docs/images/business.png" alt="Business page with the AI summary, recommend meter and reel and voice reviews" width="48%">
@@ -243,7 +243,7 @@ site.
 - Business claiming and replies.
 - Keep the "send the file on WhatsApp" fallback first-class, since Instagram downloads can break.
 - Staging environment and deploys from GitHub Actions with OIDC.
-- Schedule the weekly Instagram carousel (EventBridge Scheduler -> ECS RunTask) once a few manual
+- Schedule the weekly Instagram carousel and Reels (EventBridge Scheduler -> ECS RunTask) once a few manual
   runs have gone well; today it is a dry run by default and publishes only on a typed confirmation.
 
 ## Repository
@@ -251,7 +251,7 @@ site.
 | Path | What |
 |---|---|
 | `backend/` | FastAPI service: WhatsApp webhook, pipeline, Muse Spark agent, public API, tests |
-| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage) |
+| `backend/scripts/` | `run_pipeline_local.py` (run the Meta pipeline on one reel or voice note), `seed_demo.py` (fictional demo businesses), `weekly_highlights.py` (the week's reviews as an Instagram carousel plus one Reel per review with the reviewer's audio: rank, render, publish), `create_index.py`, `reindex.py` (rebuild the search index from DynamoDB after an OpenSearch outage) |
 | `frontend/` | Next.js static site (search, business pages, about, terms, privacy) and a zero-dependency mock API |
 | `infra/terraform/` | AWS: Route53, ACM, S3 + CloudFront, ECS Fargate + ALB, DynamoDB, OpenSearch, ECR, SSM, WAF |
 | `scripts/` | `deploy_backend.sh` (build, push by git SHA, roll ECS), `set_secrets.sh` (SSM secrets) |

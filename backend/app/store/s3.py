@@ -78,6 +78,14 @@ class Keys:
         return f"social/weekly/{run_id}/slide-{index:02d}.jpg"
 
     @staticmethod
+    def social_review_reel(run_id: str, review_id: str) -> str:
+        return f"social/weekly/{run_id}/reels/{review_id}.mp4"
+
+    @staticmethod
+    def social_review_reel_cover(run_id: str, review_id: str) -> str:
+        return f"social/weekly/{run_id}/reels/{review_id}-cover.jpg"
+
+    @staticmethod
     def social_record(run_id: str) -> str:
         return f"social/weekly/{run_id}/published.json"
 
@@ -128,6 +136,14 @@ def copy(src_key: str, dst_key: str) -> str:
 def get_json(key: str):
     body = _client().get_object(Bucket=get_settings().media_bucket, Key=key)["Body"].read()
     return json.loads(body)
+
+
+def get_json_or_none(key: str):
+    """``get_json``, or None when the object does not exist. Other errors propagate."""
+    try:
+        return get_json(key)
+    except _client().exceptions.NoSuchKey:
+        return None
 
 
 def download_file(key: str, path: Path) -> Path:
