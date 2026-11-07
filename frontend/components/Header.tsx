@@ -6,6 +6,7 @@ import Logo from "@/components/Logo";
 
 const NAV = [
   { href: "/", label: "Search" },
+  { href: "/payouts", label: "Payouts" },
   { href: "/about", label: "About" },
 ];
 

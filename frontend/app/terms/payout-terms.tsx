@@ -124,7 +124,8 @@ export const PAYOUT_SECTIONS: LegalSection[] = [
         <h3 id="rewards" className="scroll-mt-20">Points and monthly payouts (Nigeria only)</h3>
         <p>
           {B} runs an optional points programme for reviews of businesses in Nigeria. Points are paid out monthly in naira. Taking part
-          is never a condition of publishing a review.
+          is never a condition of publishing a review. A plain-language guide is on our <Link href="/payouts">payouts page</Link>; if it
+          and these Terms ever differ, these Terms apply.
         </p>
         <p>
           <strong>Points never depend on your opinion.</strong> A review earns the same points whether it is positive, mixed or negative.

@@ -13,6 +13,7 @@ export default function Footer() {
           </a>
         </p>
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link href="/payouts" className="hover:underline">Payouts</Link>
           <Link href="/about" className="hover:underline">About</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
