@@ -28,6 +28,7 @@ from app.agent.prompts import (
 )
 from app.agent.tools import DISCOVERY_TOOLS, DISCOVERY_TOOLS_NO_GOOGLE
 from app.config import get_settings
+from app.countries import country_code
 from app.meta.client import get_meta
 from app.models import (
     CATEGORIES,
@@ -425,7 +426,7 @@ def _run_search(
     query = str(args.get("query") or "").strip()[:200]
     category = args.get("category") if args.get("category") in CATEGORIES else None
     city = str(args.get("city") or "").strip()[:80] or None
-    country = str(args.get("country") or "").strip()[:2].upper() or None
+    country = country_code(str(args.get("country") or ""))
     near = None
     n = args.get("near") or {}
     lat, lng = _num(n.get("lat")), _num(n.get("lng"))

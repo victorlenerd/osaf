@@ -157,7 +157,7 @@ def search_places(
                 formatted_address=p.get("formattedAddress") or "",
                 lat=loc.get("latitude"),
                 lng=loc.get("longitude"),
-                country=_component(p, "country"),
+                country=_component(p, "country", short=True),  # alpha-2, never the name
                 city=city_of(p),
                 primary_type=p.get("primaryType"),
                 business_status=p.get("businessStatus"),
