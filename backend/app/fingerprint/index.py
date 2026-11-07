@@ -28,6 +28,7 @@ INDEX_BODY = {
             "phone_hash": {"type": "keyword"},
             "sha256": {"type": "keyword"},
             "created_at": {"type": "date"},
+            "status": {"type": "keyword"},  # pending while its review is being published
             "a": {"type": "text", "analyzer": "whitespace", "norms": False},
             "v": {"type": "text", "analyzer": "whitespace", "norms": False},
             "t": {"type": "text", "analyzer": "whitespace", "norms": False},
@@ -81,8 +82,17 @@ def tokens(fp: Fingerprint, cap: int) -> dict[str, list[str]]:
 
 
 def put(
-    review_id: str, business_id: str, phone_hash: str, created_at: str, fp: Fingerprint
+    review_id: str,
+    business_id: str,
+    phone_hash: str,
+    created_at: str,
+    fp: Fingerprint,
+    *,
+    status: str = "published",
 ) -> None:
+    """Index a review's fingerprint. Publishing indexes it as "pending" before the review is
+    stored (so a near-copy confirmed at the same moment sees it) and marks it published
+    after; check.py ignores a pending entry left behind by a publish that crashed."""
     if not enabled():
         return
     toks = tokens(fp, MAX_DOC_TOKENS)
@@ -92,10 +102,19 @@ def put(
         "phone_hash": phone_hash,
         "sha256": fp.sha256,
         "created_at": created_at,
+        "status": status,
         **{k: " ".join(v) for k, v in toks.items()},
         "fp": fp.model_dump(),
     }
     opensearch.client().index(index=_index(), id=review_id, body=doc, refresh=True)
+
+
+def mark_published(review_id: str) -> None:
+    if not enabled():
+        return
+    opensearch.client().update(
+        index=_index(), id=review_id, body={"doc": {"status": "published"}}, refresh=True
+    )
 
 
 def delete(review_id: str) -> None:
@@ -123,7 +142,15 @@ def candidates(fp: Fingerprint, *, exclude: str | None = None, size: int = 20) -
     for q in queries:
         body = {
             "size": size,
-            "_source": ["review_id", "business_id", "phone_hash", "sha256", "fp"],
+            "_source": [
+                "review_id",
+                "business_id",
+                "phone_hash",
+                "sha256",
+                "fp",
+                "status",
+                "created_at",
+            ],
             "query": {"bool": {"must": [q], "must_not": must_not}},
         }
         for hit in c.search(index=_index(), body=body)["hits"]["hits"]:

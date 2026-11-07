@@ -424,6 +424,9 @@ class Fingerprint(BaseModel):
 class SimilarityMatch(BaseModel):
     review_id: str
     business_id: str | None = None
+    # The matching review is still being published (its fingerprint is indexed but the review
+    # is not stored yet); a rejection says so rather than claiming it is already live.
+    pending: bool = False
     exact: bool = False
     audio: float = 0.0
     video: float = 0.0

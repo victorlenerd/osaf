@@ -805,3 +805,43 @@ def test_business_left_with_only_hidden_reviews_loses_its_summary(monkeypatch):
 def test_offer_names_no_month(rewards_db):
     text = flow.offer_after_publish(_review("v1"), ADA)
     assert "monthly payout" in text and rules.window_label(rules.window_for()) not in text
+
+
+def test_a_crashed_publish_leaves_no_ghost_duplicate(monkeypatch):
+    """A fingerprint indexed by a publish still in progress counts (and says so); one left by
+    a publish that crashed, with no stored review, is ignored once it is a few minutes old."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.fingerprint import index
+
+    fp = Fingerprint(audio=[7] * 50)
+
+    def doc(rid, minutes_ago, status="pending"):
+        at = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).isoformat()
+        return {"review_id": rid, "fp": fp.model_dump(), "status": status, "created_at": at}
+
+    stored = {"01OLDREAL"}
+    monkeypatch.setattr(check, "_review_exists", lambda rid: rid in stored)
+    monkeypatch.setattr(index, "enabled", lambda: True)
+    for docs, expect, pending in (
+        ([doc("01NOW", 1)], "01NOW", True),  # publishing right now: counts
+        ([doc("01GHOST", 60)], None, False),  # crashed an hour ago: ignored
+        ([doc("01OLDREAL", 60)], "01OLDREAL", False),  # marking failed, review exists
+        ([doc("01PUB", 600, status="published")], "01PUB", False),
+    ):
+        monkeypatch.setattr(index, "candidates", lambda f, exclude=None, size=20, d=docs: d)
+        dup = check.check(fp).duplicate
+        assert (dup.review_id if dup else None) == expect
+        assert (dup.pending if dup else False) is pending
+
+
+def test_publish_says_when_the_match_is_still_being_published(publishing, monkeypatch):
+    publish, saved, sent = publishing
+    monkeypatch.setattr(publish, "_load_fingerprint", lambda sub: Fingerprint(audio=[1]))
+    match = SimilarityMatch(review_id="twin", audio=0.95, pending=True)
+    monkeypatch.setattr(
+        publish.fpcheck, "check", lambda fp, **k: check.Verdict(checked=True, duplicate=match)
+    )
+    sub = _sub(kind="reel", reel_shortcode="sc")
+    assert publish.publish_submission(sub, Conversation(phone=ADA)) is None
+    assert "being published on Afefehub right now" in sent[0]

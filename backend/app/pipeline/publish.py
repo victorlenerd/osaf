@@ -25,6 +25,10 @@ __all__ = ["business_url", "phone_hash", "publish_submission"]
 
 log = logging.getLogger(__name__)
 
+PENDING_DUPLICATE_MSG = (
+    "A {what} matching this one is being published on Afefehub right now, so I won't add "
+    "it twice. If it hasn't appeared in a few minutes, send yours again."
+)
 DUPLICATE_MSG = (
     "This {what} matches a review that's already on Afefehub, so I won't publish it again. "
     "Send a fresh review of a place you visited anytime."
@@ -117,17 +121,20 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
             # near-copies confirmed at the same moment would each miss the other if we only
             # indexed after publishing; this way the later of the two always sees the earlier.
             try:
-                fpindex.put(review_id, ext.business.place_id, reviewer, now_iso(), fp)
+                fpindex.put(
+                    review_id, ext.business.place_id, reviewer, now_iso(), fp, status="pending"
+                )
             except Exception:  # noqa: BLE001
                 log.exception("fingerprint index failed for %s", review_id)
             undo.append(lambda: fpindex.delete(review_id))
             verdict = fpcheck.check(fp, exclude=review_id, before=review_id)
             if verdict.duplicate is not None:
                 release()
+                message = PENDING_DUPLICATE_MSG if verdict.duplicate.pending else DUPLICATE_MSG
                 _reject(
                     sub,
                     f"duplicate of review {verdict.duplicate.review_id}",
-                    DUPLICATE_MSG.format(what=what),
+                    message.format(what=what),
                 )
                 return None
             if verdict.checked:
@@ -168,6 +175,12 @@ def publish_submission(sub: Submission, conv: Conversation) -> Review | None:
     except Exception:
         release()
         raise
+    if fp is not None:
+        try:
+            fpindex.mark_published(review_id)
+        except Exception:  # noqa: BLE001
+            # Not fatal: check.py confirms an old pending entry against the stored review.
+            log.exception("could not mark fingerprint %s published", review_id)
     business = dynamo.upsert_business_on_publish(ext)
 
     reviews = [r for r in dynamo.list_reviews(business.business_id) if r.status == "published"]

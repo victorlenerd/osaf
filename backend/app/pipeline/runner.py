@@ -869,7 +869,8 @@ def _rejected_as_duplicate(sub: Submission, verdict: fpcheck.Verdict) -> bool:
         return False
     _set_state(sub, SubmissionState.REJECTED, f"duplicate of review {verdict.duplicate.review_id}")
     what = "voice note" if sub.kind == "voice" else "reel"
-    wa.send_text(sub.phone, publish.DUPLICATE_MSG.format(what=what))
+    message = publish.PENDING_DUPLICATE_MSG if verdict.duplicate.pending else publish.DUPLICATE_MSG
+    wa.send_text(sub.phone, message.format(what=what))
     return True
 
 
