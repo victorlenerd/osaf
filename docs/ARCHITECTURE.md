@@ -83,9 +83,9 @@ Terraform in `infra/terraform/`: Route53 zone, ACM, S3 + CloudFront (site), ECS 
 ## Weekly Instagram highlights
 
 `backend/scripts/weekly_highlights.py` turns the week's published reviews into a "Reviews of the
-week" Reel for the Afefehub Instagram page, with each reviewer's own voice (`--format carousel`
-keeps the original image carousel). It runs by hand (or later from a scheduler) and is a dry run
-unless told otherwise.
+week" carousel for the Afefehub Instagram page, then gives each review in it a Reel of its own
+that plays the reviewer's whole recording (`--no-reels` makes the carousel only). It runs by hand
+(or later from a scheduler) and is a dry run unless told otherwise.
 
 1. **Fetch** (`app/social/fetch_week.py`): businesses whose `updated_at` moved in the window, from
    the per-category GSI1 (`CAT#<category>` / `BIZ#<updated_at>`; `updated_at` only changes on
@@ -95,31 +95,36 @@ unless told otherwise.
 3. **Rank** (`app/social/rank.py`): Muse Spark gets a compact candidate list and returns ordered
    ids with a reason each plus a hook sentence; everything is validated against the candidate set
    (known ids, one per business, capped) and a deterministic heuristic tops up or replaces it.
-   `picks.json` records the result so `--from-picks` re-renders the same post without a model call.
-4. **Audio** (`app/social/audio.py`, Reel only): each pick's own audio, read-only from S3: the voice
+   `picks.json` records the result so `--from-picks` re-renders the same week without a model call.
+4. **Carousel** (`app/social/render.py`): Pillow, 1080x1350 JPEGs drawn at 2x; cover, one slide per
+   review, closing CTA; Twemoji flags with an offline ISO chip fallback; `preview.png` contact sheet.
+5. **Audio** (`app/social/audio.py`): each pick's own recording, read-only from S3: the voice
    note's m4a, else the reel's archived `source.mp4`, else the submission's `audio.wav`
-   (`--audio-dir` reads local `<review_id>.<ext>` files instead). The clip starts just before the
-   first word and ends on the last transcript turn that fits the budget (about 18 s, less when
-   there are many picks, so the Reel stays near 90 s); ffmpeg loudness-normalises and fades it.
-   Picks with no audio are dropped with a note.
-5. **Render** (`app/social/reel.py`, Reel): 1080x1920 H.264/AAC MP4 at 30 fps. Silent cover, one
-   scene per review (the card plus a waveform of the clip, RMS per bar, that fills in ink as it
-   plays, with elapsed and total time), closing CTA. Pillow draws every frame (the static card
-   once, the waveform per frame) and pipes raw RGB to ffmpeg next to one frame-exact WAV.
-   Writes `reel.mp4`, `reel-cover.jpg` (sent as the Reel's cover) and `reel-preview.png`.
-   (`app/social/render.py`, carousel: 1080x1350 JPEGs drawn at 2x; cover, one slide per review,
-   closing CTA; `preview.png` contact sheet.) Both use Twemoji flags with an offline ISO chip
-   fallback.
-6. **Caption** (`app/social/caption.py`): deterministic template, within Instagram's 2200 chars and
-   30 hashtags.
-7. **Publish** (`app/social/instagram.py`, `--publish`): the Reel (or the slides) goes to
-   `s3://<media bucket>/social/weekly/<window>/` and Meta fetches it through presigned URLs
-   (3 h for the video, 1 h for slides). Reel: one `REELS` container with `video_url`, `cover_url`
-   and `share_to_feed` -> poll `status_code` (up to 15 min of video processing) -> `media_publish`.
-   Carousel: image containers -> carousel container -> poll -> `media_publish`. A typed `yes`
-   (or `--yes`) guards the call. `published.json` lands next to the output and in S3. `--preflight`
-   only reads the account name and the 24 h quota.
+   (`--audio-dir` reads local `<review_id>.<ext>` files instead). The whole recording is used;
+   ffmpeg only evens out the loudness and adds a click-free fade at each end. Anything past
+   `--max-seconds` (14:30, so the Reel stays under Instagram's 15 min) is cut. A pick with no audio
+   keeps its slide and gets no Reel.
+6. **Single-review Reels** (`app/social/reel.py`): one 1080x1920 H.264/AAC MP4 at 30 fps per pick in
+   `reels/<review_id>/`. The review card from the first frame (header "Reviews of the week" and the
+   date range, so it points back to the round-up), with a waveform of the recording (RMS per bar)
+   that fills in ink as it plays and the elapsed and total time; then a 3 s closing CTA card.
+   Pillow draws the card once and redraws the waveform only when a bar or the second changes, and
+   pipes raw RGB to ffmpeg next to one frame-exact WAV. `reel-cover.jpg` (the card part-played) is
+   sent as the Reel's cover.
+7. **Captions** (`app/social/caption.py`): deterministic templates within Instagram's 2200 chars
+   and 30 hashtags: the carousel's, and one per Reel (first name and flag, the place, the summary,
+   what was good, a pointer to the week's round-up, the how-to-submit line).
+8. **Publish** (`app/social/weekly_publish.py`, `app/social/instagram.py`, `--publish`): the
+   carousel first (image containers -> carousel container -> poll `status_code` ->
+   `media_publish`), then each Reel (one `REELS` container with `video_url`, `cover_url` and
+   `share_to_feed` -> poll, up to 15 min of video processing -> `media_publish`). Files go to
+   `s3://<media bucket>/social/weekly/<window>/` (Reels under `reels/`) and Meta fetches them through
+   3 h presigned URLs. A typed `yes` (or `--yes`) guards the whole run after listing every post and
+   checking the 24 h quota covers them. Each post is written to `published.json` (locally and in S3)
+   the moment it is live, and a rerun skips whatever is recorded, so a partial failure can be
+   finished without posting twice. A failed carousel stops the run; a failed Reel is reported and
+   the next still goes. `--preflight` only reads the account name and the 24 h quota.
 
 Settings: `IG_USER_ID`, `IG_ACCESS_TOKEN` (SSM `/afefehub/prod/`), `IG_API_BASE`
 (`graph.facebook.com` for Facebook Login tokens, `graph.instagram.com` for Instagram Login tokens)
-and `WHATSAPP_PUBLIC_NUMBER` for the CTA. The Reel needs `ffmpeg` (already in the backend image).
+and `WHATSAPP_PUBLIC_NUMBER` for the CTA. The Reels need `ffmpeg` (already in the backend image).

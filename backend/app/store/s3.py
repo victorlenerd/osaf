@@ -64,12 +64,12 @@ class Keys:
         return f"social/weekly/{run_id}/slide-{index:02d}.jpg"
 
     @staticmethod
-    def social_reel(run_id: str) -> str:
-        return f"social/weekly/{run_id}/reel.mp4"
+    def social_review_reel(run_id: str, review_id: str) -> str:
+        return f"social/weekly/{run_id}/reels/{review_id}.mp4"
 
     @staticmethod
-    def social_reel_cover(run_id: str) -> str:
-        return f"social/weekly/{run_id}/reel-cover.jpg"
+    def social_review_reel_cover(run_id: str, review_id: str) -> str:
+        return f"social/weekly/{run_id}/reels/{review_id}-cover.jpg"
 
     @staticmethod
     def social_record(run_id: str) -> str:

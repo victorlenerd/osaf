@@ -1,13 +1,14 @@
-"""Render the weekly reel: a 1080x1920 H.264/AAC MP4 for Instagram Reels.
+"""Render one review's own Reel: a 1080x1920 H.264/AAC MP4 for Instagram Reels.
 
-Scenes, in order: a silent cover, one scene per review playing a clip of that review's own
-audio over its card with a waveform that fills in as it plays, then the closing CTA. Every
-frame is drawn with Pillow (the static parts once per scene, the waveform and the timecode per
-frame) and piped to ffmpeg as raw RGB next to one WAV built from the clips, so picture and
-sound line up to the sample. The same Canvas, fonts and colours as the carousel.
+Every review in the weekly round-up (the carousel) also gets a Reel of its own. It shows that
+review's card from the first frame, with a waveform of the reviewer's whole recording that
+fills in as it plays, then a short closing card. Every frame is drawn with Pillow (the card
+once, the waveform and the timecode only when they change) and piped to ffmpeg as raw RGB next
+to one WAV, so picture and sound line up to the sample. The same Canvas, fonts and colours as
+the carousel.
 
-The card stays inside the area Instagram leaves clear of its own buttons and caption, and the
-cover's middle 1080x1440 reads on its own because that is what the profile grid shows.
+The card stays inside the area Instagram leaves clear of its own buttons and caption, and its
+middle 1080x1440 reads on its own because that is what the profile grid shows.
 """
 
 from __future__ import annotations
@@ -52,12 +53,9 @@ SIZE = (RW, RH)
 FPS = 30
 SAMPLES_PER_FRAME = au.RATE // FPS  # 1600: every scene is a whole number of frames and samples
 
-COVER_S = 1.6
-TAIL_S = 0.5  # the finished waveform holds for a beat before the next review
-CTA_S = 4.0
-MAX_TOTAL_S = 90.0  # Reels can be longer, but the weekly round-up should stay short
-MAX_CLIP_S = 18.0
-MIN_CLIP_S = 6.0
+TAIL_S = 0.5  # the finished waveform holds for a beat before the closing card
+CTA_S = 3.0
+COVER_AT = 0.45  # the cover image shows the waveform this far through
 
 HEADER_Y = 196  # under Instagram's top bar
 CARD = (MARGIN, 300, RW - MARGIN, 1600)
@@ -79,14 +77,6 @@ def bar_count(width: int = INNER_W) -> int:
     return (width + BAR_GAP) // (BAR_W + BAR_GAP)
 
 
-def clip_budget(n_reviews: int, *, max_total_s: float = MAX_TOTAL_S) -> float:
-    """Longest clip per review so the whole reel stays within ``max_total_s``."""
-    if n_reviews <= 0:
-        return MAX_CLIP_S
-    room = max_total_s - COVER_S - CTA_S - n_reviews * TAIL_S
-    return max(MIN_CLIP_S, min(MAX_CLIP_S, room / n_reviews))
-
-
 def frames_for(seconds: float) -> int:
     return max(1, round(seconds * FPS))
 
@@ -103,20 +93,6 @@ def _header(c: Canvas, window: Window, site_url: str) -> None:
     c.text((MARGIN + mark + 16, HEADER_Y), "Reviews of the week", "bold", 32, INK, anchor="lm")
     c.text((RW - MARGIN, HEADER_Y), window_label(window), "regular", 28, INK_700, anchor="rm")
     c.text((RW / 2, CARD[3] + 56), site_url, "bold", 30, INK, anchor="ma")
-
-
-def render_reel_cover(window: Window, *, site_url: str) -> Image.Image:
-    c = Canvas(YELLOW, SIZE)
-    lw, lh = 540, 128  # lockup.png is 1080x256
-    c.paste(_asset("lockup.png"), ((RW - lw) / 2, 560), (lw, lh))
-    y = c.paragraph(RW / 2, 780, ["Reviews of", "the week"], "bold", 120, INK, 1.16, anchor="ma")
-    c.rect((RW / 2 - 40, y + 28, RW / 2 + 40, y + 36), INK, radius=4)
-    c.text((RW / 2, y + 76), window_label(window), "regular", 46, INK_700, anchor="ma")
-    label = "Sound on: hear the reviewers"
-    w = c.width(label, "bold", 32) + 64
-    c.rect((RW / 2 - w / 2, 1330, RW / 2 + w / 2, 1330 + 72), INK, radius=36)
-    c.text((RW / 2, 1330 + 36), label, "bold", 32, YELLOW, anchor="mm")
-    return c.finish()
 
 
 def render_reel_card(
@@ -252,7 +228,6 @@ class ReelResult:
     cover: Path
     preview: Path
     duration_s: float
-    clips: list[au.Clip]
 
 
 def _write_wav(path: Path, pcm: bytes) -> Path:
@@ -293,9 +268,47 @@ def _contact_sheet(frames: list[Image.Image], path: Path, scale: float = 0.22) -
     return path
 
 
-def render_reel(
-    picks: list[Candidate],
-    clips: list[au.Clip],
+def _encode(plan: list[tuple[int, Image.Image | ReviewScene]], work: Path, video: Path) -> float:
+    """Pipe every frame of ``plan`` (frame count, still image or review scene) to ffmpeg next to
+    a WAV holding each scene's audio padded to exactly its frames. Returns the length in s."""
+    pcm = [_fit(obj.clip.pcm if isinstance(obj, ReviewScene) else b"", n) for n, obj in plan]
+    work.mkdir(parents=True, exist_ok=True)
+    track = _write_wav(work / "track.wav", b"".join(pcm))
+    proc = subprocess.Popen(
+        encode_command(track, video), stdin=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    assert proc.stdin is not None
+    total = 0
+    try:
+        for n, obj in plan:
+            if isinstance(obj, ReviewScene):
+                dur = obj.clip.duration_s
+                last_key, raw = None, b""
+                for i in range(n):
+                    t = i / FPS
+                    p = min(1.0, t / dur) if dur else 1.0
+                    key = (math.floor(p * obj.n_bars + 1e-9), int(min(t, dur)))
+                    if key != last_key:  # only redraw when a bar or the second changes
+                        raw, last_key = obj.frame(t).tobytes(), key
+                    proc.stdin.write(raw)
+            else:
+                raw = obj.tobytes()
+                for _ in range(n):
+                    proc.stdin.write(raw)
+            total += n
+        proc.stdin.close()
+    except BrokenPipeError:
+        pass
+    err = proc.stderr.read().decode() if proc.stderr else ""
+    if proc.wait() != 0:
+        raise RuntimeError(f"ffmpeg failed to encode the reel: {err[-500:]}")
+    (work / "track.wav").unlink(missing_ok=True)
+    return total / FPS
+
+
+def render_review_reel(
+    cand: Candidate,
+    clip: au.Clip,
     window: Window,
     out: Path,
     *,
@@ -304,67 +317,26 @@ def render_reel(
     flag_fetch: bool = True,
     flag_cache: Path | None = None,
 ) -> ReelResult:
-    """Write reel.mp4, reel-cover.jpg (the cover frame, also used as the Reel's cover image)
-    and reel-preview.png (one still per scene) into ``out``."""
-    if len(picks) != len(clips) or not picks:
-        raise ValueError("render_reel needs one clip per pick, and at least one pick")
+    """Write reel.mp4, reel-cover.jpg (the card part-played, sent as the Reel's cover) and
+    reel-preview.png (start, middle, end and closing card) into ``out``."""
+    if not clip.pcm:
+        raise ValueError(f"{cand.review_id}: the clip has no audio")
     out.mkdir(parents=True, exist_ok=True)
-    cache_dir = flag_cache or out / ".flags"
-
-    cover = render_reel_cover(window, site_url=site_url)
+    flag = flag_image(
+        cand.reviewer_country, 64, flag_cache or out / ".flags", fetch=flag_fetch,
+        font_path=FONTS["bold"],
+    )  # fmt: skip
+    scene = ReviewScene(render_reel_card(cand, window, flag=flag, site_url=site_url), clip)
     cta = render_reel_cta(window, wa_number=wa_number, site_url=site_url)
-    scenes = []
-    for cand, clip in zip(picks, clips, strict=True):
-        flag = flag_image(
-            cand.reviewer_country, 64, cache_dir, fetch=flag_fetch, font_path=FONTS["bold"]
-        )
-        card = render_reel_card(cand, window, flag=flag, site_url=site_url)
-        scenes.append(ReviewScene(card, clip))
-
-    # one audio track for the whole reel, scene by scene, frame-exact
-    plan: list[tuple[str, int, object]] = [("still", frames_for(COVER_S), cover)]
-    pcm = [_fit(b"", plan[0][1])]
-    for sc in scenes:
-        n = frames_for(sc.clip.duration_s + TAIL_S)
-        plan.append(("review", n, sc))
-        pcm.append(_fit(sc.clip.pcm, n))
-    plan.append(("still", frames_for(CTA_S), cta))
-    pcm.append(_fit(b"", plan[-1][1]))
-
-    work = out / ".reel"
-    work.mkdir(exist_ok=True)
-    track = _write_wav(work / "track.wav", b"".join(pcm))
+    plan: list[tuple[int, Image.Image | ReviewScene]] = [
+        (frames_for(clip.duration_s + TAIL_S), scene),
+        (frames_for(CTA_S), cta),
+    ]
     video = out / "reel.mp4"
-    proc = subprocess.Popen(
-        encode_command(track, video), stdin=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    assert proc.stdin is not None
-    total_frames = 0
-    try:
-        for kind, n, obj in plan:
-            if kind == "still":
-                raw = obj.tobytes()  # type: ignore[union-attr]
-                for _ in range(n):
-                    proc.stdin.write(raw)
-            else:
-                sc: ReviewScene = obj  # type: ignore[assignment]
-                last_key, raw = None, b""
-                for i in range(n):
-                    t = i / FPS
-                    p = min(1.0, t / sc.clip.duration_s) if sc.clip.duration_s else 1.0
-                    key = (math.floor(p * sc.n_bars + 1e-9), int(min(t, sc.clip.duration_s)))
-                    if key != last_key:  # only redraw when a bar or the second changes
-                        raw, last_key = sc.frame(t).tobytes(), key
-                    proc.stdin.write(raw)
-            total_frames += n
-        proc.stdin.close()
-    except BrokenPipeError:
-        pass
-    err = proc.stderr.read().decode() if proc.stderr else ""
-    if proc.wait() != 0:
-        raise RuntimeError(f"ffmpeg failed to encode the reel: {err[-500:]}")
+    duration = _encode(plan, out / ".reel", video)
 
-    cover_path = save_jpeg(cover, out / "reel-cover.jpg")
-    stills = [cover] + [sc.frame(sc.clip.duration_s * 0.45) for sc in scenes] + [cta]
+    dur = clip.duration_s
+    cover = save_jpeg(scene.frame(dur * COVER_AT), out / "reel-cover.jpg")
+    stills = [scene.frame(0), scene.frame(dur * COVER_AT), scene.frame(dur), cta]
     preview = _contact_sheet(stills, out / "reel-preview.png")
-    return ReelResult(video, cover_path, preview, total_frames / FPS, list(clips))
+    return ReelResult(video, cover, preview, duration)

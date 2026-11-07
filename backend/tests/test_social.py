@@ -684,30 +684,6 @@ def test_candidate_knows_where_the_audio_is():
     assert au.s3_audio_keys(c)[0] == "submissions/sub-r1/source.mp4"
 
 
-def test_clip_window_ends_on_a_turn_boundary():
-    turns = [(1_500, 6_000), (6_400, 12_000), (12_500, 30_000)]
-    assert au.clip_window(40_000, turns, 15_000) == (1_300, 12_000)
-    # one turn longer than the limit: hard cut at the limit
-    assert au.clip_window(40_000, [(0, 35_000)], 15_000) == (0, 15_000)
-    # no transcript: from the top, capped by the audio itself
-    assert au.clip_window(8_000, [], 15_000) == (0, 8_000)
-    # a fitting turn too short to stand alone: use the whole budget
-    assert au.clip_window(40_000, [(0, 1_000), (1_200, 30_000)], 15_000) == (0, 15_000)
-
-
-def test_turns_from_transcript_skips_untimed_turns():
-    raw = {
-        "transcript": "a b",
-        "turns": [
-            {"startMs": 100, "endMs": 900, "transcript": "a"},
-            {"transcript": "b"},
-            {"startMs": 50, "endMs": 50, "transcript": "c"},
-        ],
-    }
-    assert au.turns_from_transcript(raw) == [(100, 900)]
-    assert au.turns_from_transcript(None) == []
-
-
 def _tone(seconds: float, gaps: tuple[tuple[float, float], ...] = ()) -> bytes:
     n = int(seconds * au.RATE)
     s = array("h", (int(12_000 * math.sin(2 * math.pi * 220 * i / au.RATE)) for i in range(n)))
@@ -723,13 +699,6 @@ def test_peaks_shape_and_silence():
     assert all(v == 0 for v in lv[11:19]) and all(v > 0.9 for v in lv[:9])
     assert au.peaks(bytes(1000), 10) == [0.0] * 10
     assert au.peaks(b"", 5) == [0.0] * 5
-
-
-def test_clip_budget_keeps_the_reel_short():
-    assert rl.clip_budget(1) == rl.MAX_CLIP_S
-    five = rl.clip_budget(5)
-    assert rl.COVER_S + rl.CTA_S + 5 * (five + rl.TAIL_S) <= rl.MAX_TOTAL_S + 1e-6
-    assert rl.clip_budget(40) == rl.MIN_CLIP_S
 
 
 def test_review_scene_waveform_fills_as_it_plays():
@@ -751,23 +720,38 @@ def test_review_scene_waveform_fills_as_it_plays():
     assert rl.timecode(65.9) == "01:05"
 
 
-@needs_ffmpeg
-def test_render_reel_end_to_end(tmp_path):
-    src = tmp_path / "r1.wav"
-    with wave.open(str(src), "wb") as f:
+def _wav(path, seconds: float, gaps=((1.0, 1.5),)):
+    with wave.open(str(path), "wb") as f:
         f.setnchannels(1), f.setsampwidth(2), f.setframerate(au.RATE)
-        f.writeframes(_tone(4.0, gaps=((1.0, 1.5),)))
-    c1, c2 = _cand(1, "Proper Surulere amala worth the queue."), _cand(2, "Fine coffee.", "Kigali")
+        f.writeframes(_tone(seconds, gaps=gaps))
+    return path
+
+
+@needs_ffmpeg
+def test_make_clip_keeps_the_whole_recording_and_caps_only_past_the_limit(tmp_path):
+    c1, c2 = _cand(1, "Proper Surulere amala worth the queue."), _cand(2, "Fine coffee.")
+    _wav(tmp_path / "r1.wav", 4.0)
     a = au.local_audio(c1, tmp_path)
     assert a is not None and abs(a.duration_ms - 4000) < 50
     assert au.local_audio(c2, tmp_path) is None
-    clip = au.make_clip(a, max_s=3.0)
-    assert (clip.start_ms, clip.end_ms) == (0, 3000)
-    assert abs(clip.duration_s - 3.0) < 0.05
+    whole = au.make_clip(a)
+    assert (whole.start_ms, whole.end_ms) == (0, a.duration_ms)
+    assert abs(whole.duration_s - 4.0) < 0.05
+    capped = au.make_clip(a, max_s=2.5)
+    assert capped.end_ms == 2500 and abs(capped.duration_s - 2.5) < 0.05
+    _wav(tmp_path / "r2.wav", 0.4, gaps=())
+    with pytest.raises(au.ReviewAudioError, match="too short"):
+        au.make_clip(au.local_audio(c2, tmp_path))
 
+
+@needs_ffmpeg
+def test_render_review_reel_end_to_end(tmp_path):
+    c1 = _cand(1, "Proper Surulere amala worth the queue.")
+    _wav(tmp_path / "r1.wav", 4.0)
+    clip = au.make_clip(au.local_audio(c1, tmp_path))
     w = window_from_dates("2026-10-20", "2026-10-27")
-    res = rl.render_reel([c1], [clip], w, tmp_path / "out", flag_fetch=False)
-    want = rl.COVER_S + clip.duration_s + rl.TAIL_S + rl.CTA_S
+    res = rl.render_review_reel(c1, clip, w, tmp_path / "out", flag_fetch=False)
+    want = clip.duration_s + rl.TAIL_S + rl.CTA_S
     assert abs(res.duration_s - want) < 0.1
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries",
@@ -781,8 +765,121 @@ def test_render_reel_end_to_end(tmp_path):
     assert (streams["video"]["width"], streams["video"]["height"]) == (1080, 1920)
     assert streams["audio"]["codec_name"] == "aac" and streams["audio"]["sample_rate"] == "48000"
     assert abs(float(info["format"]["duration"]) - want) < 0.15
-    with Image.open(res.cover) as im:
+    with Image.open(res.cover) as im:  # the card itself is the cover, not a separate title card
         assert im.size == (1080, 1920) and im.format == "JPEG"
+        assert im.getpixel((rl.RW // 2, rl.INNER_TOP + 300))[:3] == (255, 255, 255)
     assert res.preview.exists()
     with pytest.raises(ValueError):
-        rl.render_reel([c1, c2], [clip], w, tmp_path / "bad")
+        rl.render_review_reel(c1, au.Clip("r1", 0, 0, b""), w, tmp_path / "bad")
+
+
+def test_review_caption_is_first_name_flag_and_the_review():
+    w = window_from_dates("2026-10-20", "2026-10-27")
+    c = to_candidate(review())
+    text = cap.build_review_caption(c, w, wa_number="+234 800 000 0000")
+    lines = text.splitlines()
+    assert lines[0] == "🇳🇬 Tola on Amala Corner Surulere, Lagos"
+    assert "“Proper Surulere amala worth the twenty-minute queue.”" in text
+    assert "+ Amala was soft and hot" in text
+    assert "Reviews of the week (20 to 26 Oct 2026)" in text
+    assert "+234 800 000 0000" in text and "#lagos" in text
+    assert "abc123" not in text and "Adeyemi" not in text  # no hash, no surname
+    cap.assert_caption_ok(text)
+    long = c.model_copy(update={"summary": "word " * 900, "good": ["x" * 300] * 3})
+    assert len(cap.build_review_caption(long, w)) <= cap.MAX_CAPTION_CHARS
+
+
+# ------------------------------------------------------------- publishing a week
+from pathlib import Path  # noqa: E402
+
+from app.social import weekly_publish as wp  # noqa: E402
+
+
+class FakeIG:
+    """Stands in for publish_carousel / publish_reel; fails the reels named in ``fail``."""
+
+    def __init__(self, fail=()):
+        self.fail, self.calls = set(fail), []
+
+    def carousel(self, client, urls, caption, **kw):
+        self.calls.append(("carousel", len(urls)))
+        return "car1", "https://ig/p/C/"
+
+    def reel(self, client, video_url, caption, *, cover_url="", **kw):
+        self.calls.append(("reel", video_url))
+        if any(f in video_url for f in self.fail):
+            raise ig.InstagramPublishError("boom")
+        return f"m-{video_url}", f"https://ig/reel/{video_url}/"
+
+
+def _jobs(tmp_path, *ids):
+    return [
+        wp.ReelJob(i, f"Biz {i}", tmp_path / f"{i}.mp4", tmp_path / f"{i}.jpg", f"cap {i}", 30.0)
+        for i in ids
+    ]
+
+
+def _run(monkeypatch, fake, record, reels, slides=("s1.jpg", "s2.jpg")):
+    monkeypatch.setattr(wp, "publish_carousel", fake.carousel)
+    monkeypatch.setattr(wp, "publish_reel", fake.reel)
+    saved: list[dict] = []
+    ok = wp.publish_week(
+        None, record, run_id="w1", slides=[Path(s) for s in slides], caption="c",
+        reels=reels, upload=lambda p, key, ct: key,
+        save=lambda r: saved.append(json.loads(json.dumps(r))),
+        say=lambda m: None,
+    )  # fmt: skip
+    return ok, saved
+
+
+def test_publish_week_posts_carousel_then_each_reel_and_records_each(monkeypatch, tmp_path):
+    fake = FakeIG()
+    rec = wp.new_record("w1", "afefehub")
+    ok, saved = _run(monkeypatch, fake, rec, _jobs(tmp_path, "r1", "r2"))
+    assert ok
+    assert fake.calls == [
+        ("carousel", 2),
+        ("reel", "social/weekly/w1/reels/r1.mp4"),
+        ("reel", "social/weekly/w1/reels/r2.mp4"),
+    ]
+    assert len(saved) == 3  # written after every post, not only at the end
+    assert saved[0]["carousel"]["media_id"] == "car1" and saved[0]["reels"] == []
+    assert [r["review_id"] for r in saved[-1]["reels"]] == ["r1", "r2"]
+
+
+def test_publish_week_carries_on_past_a_failed_reel_and_a_rerun_finishes(monkeypatch, tmp_path):
+    jobs = _jobs(tmp_path, "r1", "r2", "r3")
+    rec = wp.new_record("w1", "afefehub")
+    ok, _ = _run(monkeypatch, FakeIG(fail={"r2"}), rec, jobs)
+    assert not ok and [r["review_id"] for r in rec["reels"]] == ["r1", "r3"]
+
+    again = FakeIG()
+    rec2 = wp.new_record("w1", "afefehub", json.loads(json.dumps(rec)))
+    assert wp.pending(rec2, jobs) == (False, [jobs[1]])
+    ok, _ = _run(monkeypatch, again, rec2, jobs)
+    assert ok and again.calls == [("reel", "social/weekly/w1/reels/r2.mp4")]  # nothing twice
+    assert [r["review_id"] for r in rec2["reels"]] == ["r1", "r3", "r2"]
+
+
+def test_publish_week_stops_when_the_carousel_fails(monkeypatch, tmp_path):
+    def bad_carousel(*a, **kw):
+        raise ig.InstagramPublishError("nope")
+
+    fake = FakeIG()
+    monkeypatch.setattr(wp, "publish_carousel", bad_carousel)
+    monkeypatch.setattr(wp, "publish_reel", fake.reel)
+    rec = wp.new_record("w1", "afefehub")
+    ok = wp.publish_week(
+        None, rec, run_id="w1", slides=[Path("s1.jpg")], caption="c",
+        reels=_jobs(tmp_path, "r1"), upload=lambda p, k, ct: k, save=lambda r: None,
+        say=lambda m: None,
+    )  # fmt: skip
+    assert not ok and fake.calls == [] and rec["carousel"] is None
+
+
+def test_new_record_reads_older_single_post_records():
+    old_reel = {"media_id": "m1", "permalink": "p", "format": "reel", "run_id": "w1"}
+    rec = wp.new_record("w1", "afefehub", old_reel)
+    assert rec["carousel"] is None and rec["earlier"] == [old_reel]  # the round-up Reel test
+    old_car = {"media_id": "m2", "permalink": "p2", "published_at": "t", "slides": ["a"]}
+    assert wp.new_record("w1", "a", old_car)["carousel"]["media_id"] == "m2"

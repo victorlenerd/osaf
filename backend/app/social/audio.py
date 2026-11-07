@@ -1,15 +1,14 @@
-"""The review's own audio for the weekly reel: find it, pick a clip, decode it, measure it.
+"""The review's own audio for its single-review Reel: find it, decode it, measure it.
 
 Sources, best first: the voice note's playable m4a, the reel's archived source video, then the
-16 kHz WAV every submission keeps for transcription. A clip starts where the speech starts and
-ends on a transcript turn boundary when one fits, so a reviewer is not cut mid-sentence unless a
-single turn runs past the limit (then it fades out). Everything is decoded by ffmpeg to mono
-48 kHz s16le, loudness-normalised so every review plays at the same level.
+16 kHz WAV every submission keeps for transcription. The Reel plays the whole recording; ffmpeg
+only evens out the loudness and adds a few-millisecond fade at each end so it starts and stops
+without a click. Anything longer than ``MAX_SECONDS`` (Instagram allows 15 min) is cut there.
+Decoded to mono 48 kHz s16le.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import subprocess
@@ -17,16 +16,15 @@ from array import array
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.models import Transcript
 from app.social.candidates import Candidate
 
 log = logging.getLogger(__name__)
 
 RATE = 48_000  # Instagram's maximum AAC sample rate
 SAMPLE_BYTES = 2  # s16le mono
-MIN_CLIP_MS = 3_000
-LEAD_IN_MS = 200  # keep a breath before the first word
-FADE_IN_S, FADE_OUT_S = 0.12, 0.45
+MIN_CLIP_MS = 1_000
+MAX_SECONDS = 870.0  # 14:30, so the closing card still fits under Instagram's 15 min
+FADE_IN_S, FADE_OUT_S = 0.03, 0.3
 AUDIO_EXTS = (".m4a", ".mp4", ".ogg", ".opus", ".wav", ".mp3", ".aac", ".aiff", ".mov", ".webm")
 
 
@@ -39,7 +37,6 @@ class ReviewAudio:
     review_id: str
     path: Path  # local source file (any ffmpeg input)
     duration_ms: int
-    turns: list[tuple[int, int]]  # (start_ms, end_ms) of each transcript turn, may be empty
 
 
 @dataclass
@@ -47,7 +44,7 @@ class Clip:
     review_id: str
     start_ms: int
     end_ms: int
-    pcm: bytes  # mono s16le at RATE, already trimmed, faded and normalised
+    pcm: bytes  # mono s16le at RATE, normalised, with click-free ends
 
     @property
     def duration_s(self) -> float:
@@ -79,31 +76,17 @@ def probe_duration_ms(path: Path) -> int:
         raise ReviewAudioError(f"ffprobe could not read {path.name}: {out.stderr.strip()}") from e
 
 
-def turns_from_transcript(raw: dict | None) -> list[tuple[int, int]]:
-    if not raw:
-        return []
-    t = Transcript.from_asr(raw)
-    return [
-        (x.start_ms, x.end_ms)
-        for x in t.turns
-        if x.start_ms is not None and x.end_ms is not None and x.end_ms > x.start_ms
-    ]
-
-
 def local_audio(c: Candidate, audio_dir: Path) -> ReviewAudio | None:
-    """``<audio_dir>/<review_id>.<ext>``, with an optional ``<review_id>.transcript.json``
-    (the raw ASR response) next to it. For samples and for re-renders without AWS."""
+    """``<audio_dir>/<review_id>.<ext>``: for samples and for re-renders without AWS."""
     for ext in AUDIO_EXTS:
         p = audio_dir / f"{c.review_id}{ext}"
         if p.exists():
-            tj = audio_dir / f"{c.review_id}.transcript.json"
-            raw = json.loads(tj.read_text()) if tj.exists() else None
-            return ReviewAudio(c.review_id, p, probe_duration_ms(p), turns_from_transcript(raw))
+            return ReviewAudio(c.review_id, p, probe_duration_ms(p))
     return None
 
 
 def fetch_audio(c: Candidate, work: Path) -> ReviewAudio | None:
-    """Download the review's audio (and transcript timings) from S3 into ``work``. Read-only."""
+    """Download the review's audio from S3 into ``work``. Read-only."""
     from botocore.exceptions import ClientError
 
     from app.store import s3
@@ -115,30 +98,11 @@ def fetch_audio(c: Candidate, work: Path) -> ReviewAudio | None:
         except ClientError as e:
             log.info("no audio at %s: %s", key, e)
             continue
-        raw = None
-        if c.submission_id:
-            try:
-                raw = s3.get_json(s3.Keys.transcript_json(c.submission_id))
-            except ClientError:
-                raw = None
-        return ReviewAudio(c.review_id, dest, probe_duration_ms(dest), turns_from_transcript(raw))
+        return ReviewAudio(c.review_id, dest, probe_duration_ms(dest))
     return None
 
 
-# ---------------------------------------------------------------------- the clip
-def clip_window(duration_ms: int, turns: list[tuple[int, int]], max_ms: int) -> tuple[int, int]:
-    """(start_ms, end_ms): from just before the first word, to the end of the last transcript
-    turn that fits in ``max_ms``; a hard cut at ``max_ms`` when even the first turn is longer."""
-    turns = sorted((max(0, s), min(e, duration_ms)) for s, e in turns if s < duration_ms)
-    start = max(0, turns[0][0] - LEAD_IN_MS) if turns else 0
-    limit = min(duration_ms, start + max_ms)
-    fitting = [e for _, e in turns if e <= limit]
-    end = max(fitting) if fitting else limit
-    if end - start < MIN_CLIP_MS:  # the fitting turns are too short to stand alone
-        end = limit
-    return start, end
-
-
+# ---------------------------------------------------------------------- decoding
 def decode_clip(src: Path, start_ms: int, end_ms: int, *, normalise: bool = True) -> bytes:
     dur = max(0.0, (end_ms - start_ms) / 1000)
     filters = []
@@ -161,9 +125,10 @@ def decode_clip(src: Path, start_ms: int, end_ms: int, *, normalise: bool = True
     return pcm[:want] if len(pcm) > want else pcm  # loudnorm can pad a few ms
 
 
-def make_clip(audio: ReviewAudio, *, max_s: float, normalise: bool = True) -> Clip:
-    start, end = clip_window(audio.duration_ms, audio.turns, int(max_s * 1000))
-    if end - start < 1000:
+def make_clip(audio: ReviewAudio, *, max_s: float = MAX_SECONDS, normalise: bool = True) -> Clip:
+    """The whole recording, cut at ``max_s`` only if it runs longer."""
+    start, end = 0, min(audio.duration_ms, int(max_s * 1000))
+    if end - start < MIN_CLIP_MS:
         raise ReviewAudioError(f"{audio.review_id}: audio is too short ({end - start} ms)")
     pcm = decode_clip(audio.path, start, end, normalise=normalise)
     return Clip(audio.review_id, start, end, pcm)
